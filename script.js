@@ -1,192 +1,411 @@
-// Configuration
-const config = {
-    proxyUrl: 'https://api.allorigins.win/get?url=https://permtimeline.com/',
-    refreshInterval: 60 * 60 * 1000, // 1 hour
-    maxCompletedDays: 30
+// Configuration Constants
+const CONFIG = {
+  PROXY_URL: 'https://api.allorigins.win/get?url=https://permtimeline.com/',
+  REFRESH_INTERVAL: 60 * 60 * 1000, // 1 hour in milliseconds
+  MAX_COMPLETED_DAYS: 60, // Store up to 60 days of completed cases
+  DATA_VERSION: '2.1', // Data structure version
+  BACKUP_KEYS: ['gcTimelineData', 'gcTimelineData_v1', 'gcTimelineData_backup'] // Possible storage keys
 };
 
-// Data storage
-let appData = {
-    pending: [],
-    completed: [],
-    lastUpdated: null
+// DOM Elements
+const elements = {
+  pendingTableBody: document.querySelector('#pendingTable tbody'),
+  completedTableBody: document.querySelector('#completedTable tbody'),
+  totalPending: document.getElementById('totalPending'),
+  totalCompleted: document.getElementById('totalCompleted'),
+  lastUpdated: document.getElementById('lastUpdated'),
+  nextRefresh: document.getElementById('nextRefresh'),
+  refreshBtn: document.getElementById('refreshBtn'),
+  status: document.getElementById('status')
 };
 
-// DOM elements
-const refreshBtn = document.getElementById('refresh-btn');
-const statusElement = document.getElementById('status');
-const lastUpdatedElement = document.getElementById('last-updated');
+// Chart Instances
+let charts = {
+  pending: null,
+  completed: null
+};
 
-// Initialize
-document.addEventListener('DOMContentLoaded', init);
+// Application State
+let state = {
+  pending: [],
+  completed: [],
+  lastUpdated: null
+};
 
-async function init() {
+// Initialize Application
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+async function initializeApp() {
+  try {
+    // Attempt to recover any existing data first
+    recoverData();
+    
+    // Set up UI event listeners
     setupEventListeners();
-    loadData();
+    
+    // Render initial data if available
+    if (state.pending.length > 0 || state.completed.length > 0) {
+      renderAllData();
+    }
+    
+    // Fetch new data and start auto-refresh
     await fetchData();
     startAutoRefresh();
+    
+  } catch (error) {
+    console.error('Initialization error:', error);
+    elements.status.textContent = 'Initialization failed. See console for details.';
+  }
 }
 
-function setupEventListeners() {
-    refreshBtn.addEventListener('click', fetchData);
-}
-
-function loadData() {
-    const savedData = localStorage.getItem('appData');
-    if (savedData) {
-        appData = JSON.parse(savedData);
-        renderTables();
+// Data Management Functions
+function recoverData() {
+  try {
+    // Check all possible storage keys
+    for (const key of CONFIG.BACKUP_KEYS) {
+      const storedData = localStorage.getItem(key);
+      if (storedData) {
+        const parsedData = JSON.parse(storedData);
+        
+        // Migrate from old versions if needed
+        if (!parsedData.version || parsedData.version === 'v1') {
+          state = {
+            pending: Array.isArray(parsedData.pending) ? parsedData.pending : [],
+            completed: Array.isArray(parsedData.completed) ? parsedData.completed : [],
+            lastUpdated: parsedData.lastUpdated || null
+          };
+        } else {
+          state = parsedData;
+        }
+        
+        // Create backup of recovered data
+        createBackup();
+        break;
+      }
     }
+  } catch (error) {
+    console.error('Data recovery error:', error);
+    // Initialize empty state if recovery fails
+    state = { pending: [], completed: [], lastUpdated: null };
+  }
 }
 
 function saveData() {
-    localStorage.setItem('appData', JSON.stringify(appData));
-}
-
-async function fetchData() {
-    try {
-        refreshBtn.disabled = true;
-        statusElement.textContent = 'Fetching latest data...';
-
-        const response = await fetch(config.proxyUrl);
-        if (!response.ok) throw new Error('Network error');
-
-        const data = await response.json();
-        if (!data.contents) throw new Error('No content received');
-
-        const parser = new DOMParser();
-        const htmlDoc = parser.parseFromString(data.contents, 'text/html');
-
-        // Improved parsing for pending applications
-        const allTextNodes = Array.from(htmlDoc.querySelectorAll('*'))
-            .filter(el => el.innerText && el.innerText.trim().length > 0);
-
-        const pendingData = [];
-        const monthMap = {
-            "November 2023": "nov", "December 2023": "dec", "January 2024": "jan",
-            "February 2024": "feb", "March 2024": "mar", "April 2024": "apr", "May 2024": "may"
-        };
-
-        Object.keys(monthMap).forEach(month => {
-            const monthIndex = allTextNodes.findIndex(el => 
-                el.innerText.includes(`Submission Month: ${month}`)
-            );
-            if (monthIndex !== -1) {
-                for (let i = monthIndex + 1; i < Math.min(monthIndex + 15, allTextNodes.length); i++) {
-                    const text = allTextNodes[i].innerText;
-                    if (text.includes("Pending Applications") && !text.includes("173,427")) {
-                        const matches = text.match(/Pending Applications: ([0-9,]+) \(([0-9.]+)%\)/);
-                        if (matches) {
-                            pendingData.push({
-                                month: month,
-                                count: parseInt(matches[1].replace(/,/g, '')),
-                                percentage: parseFloat(matches[2])
-                            });
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-
-        // Extract completed cases
-        let completedCount = 0;
-        let completedPercentage = 0;
-        const completedText = allTextNodes.find(el => el.innerText.includes("Total Completed Today"));
-        if (completedText) {
-            const matches = completedText.innerText.match(/Total Completed Today:.*?([0-9]+).*?([0-9.]+)%/);
-            if (matches) {
-                completedCount = parseInt(matches[1]);
-                completedPercentage = matches[2] ? parseFloat(matches[2]) : 0;
-            }
-        }
-
-        // Update app data
-        appData.pending = pendingData;
-        const today = new Date().toISOString().split('T')[0];
-        if (!appData.completed.some(entry => entry.date === today) && completedCount > 0) {
-            appData.completed.unshift({
-                date: today,
-                count: completedCount,
-                percentage: completedPercentage
-            });
-            if (appData.completed.length > config.maxCompletedDays) {
-                appData.completed = appData.completed.slice(0, config.maxCompletedDays);
-            }
-        }
-
-        appData.lastUpdated = new Date().toISOString();
-        saveData();
-        renderTables();
-        statusElement.textContent = 'Data updated successfully!';
-        setTimeout(() => statusElement.textContent = '', 3000);
-    } catch (error) {
-        console.error('Fetch error:', error);
-        statusElement.textContent = `Error: ${error.message}`;
-    } finally {
-        refreshBtn.disabled = false;
-    }
-}
-
-function renderTables() {
-    const monthMap = {
-        "November 2023": "nov", "December 2023": "dec", "January 2024": "jan",
-        "February 2024": "feb", "March 2024": "mar", "April 2024": "apr", "May 2024": "may"
+  try {
+    // Create backup before saving
+    createBackup();
+    
+    // Prepare data for storage
+    const dataToSave = {
+      ...state,
+      version: CONFIG.DATA_VERSION,
+      savedAt: new Date().toISOString()
     };
-
-    let totalPending = 0;
-    Object.keys(monthMap).forEach(month => {
-        const data = appData.pending.find(p => p.month === month);
-        const countEl = document.getElementById(`pending-${monthMap[month]}`);
-        const percentEl = document.getElementById(`percent-${monthMap[month]}`);
-        if (data) {
-            countEl.textContent = data.count.toLocaleString();
-            percentEl.textContent = `${data.percentage}%`;
-            totalPending += data.count;
-        } else {
-            countEl.textContent = "Not Found";
-            percentEl.textContent = "";
-        }
-    });
-    document.getElementById('total-pending').textContent = totalPending.toLocaleString();
-
-    const dailyBody = document.getElementById('daily-data');
-    dailyBody.innerHTML = '';
-    appData.completed.forEach(entry => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${entry.date}</td>
-            <td>${entry.count.toLocaleString()}</td>
-            <td>${entry.percentage}%</td>
-        `;
-        dailyBody.appendChild(row);
-    });
-
-    updateLastUpdated();
+    
+    localStorage.setItem('gcTimelineData', JSON.stringify(dataToSave));
+  } catch (error) {
+    console.error('Data save error:', error);
+  }
 }
 
-function updateLastUpdated() {
-    lastUpdatedElement.textContent = appData.lastUpdated 
-        ? new Date(appData.lastUpdated).toLocaleString() 
-        : 'Never';
+function createBackup() {
+  try {
+    localStorage.setItem('gcTimelineData_backup', JSON.stringify(state));
+  } catch (error) {
+    console.error('Backup creation failed:', error);
+  }
+}
+
+// Data Fetching and Processing
+async function fetchData() {
+  try {
+    // Update UI state
+    elements.refreshBtn.disabled = true;
+    elements.status.textContent = 'Fetching latest data...';
+    
+    // Fetch data through proxy
+    const response = await fetch(CONFIG.PROXY_URL);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    
+    const proxyData = await response.json();
+    if (!proxyData.contents) throw new Error('No content received from proxy');
+    
+    // Parse and process the HTML
+    const processedData = processHtmlData(proxyData.contents);
+    
+    // Update application state
+    updateApplicationState(processedData);
+    
+    // Save and render
+    saveData();
+    renderAllData();
+    
+    // Update status
+    elements.status.textContent = 'Data updated successfully!';
+    setTimeout(() => elements.status.textContent = '', 3000);
+    
+  } catch (error) {
+    console.error('Data fetch error:', error);
+    elements.status.textContent = `Error: ${error.message}`;
+    
+  } finally {
+    elements.refreshBtn.disabled = false;
+    scheduleNextRefresh();
+  }
+}
+
+function processHtmlData(htmlContent) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlContent, 'text/html');
+  
+  // Extract pending applications
+  const pendingData = [];
+  const monthSections = doc.querySelectorAll('div.timeline-section, section.timeline-entry');
+  
+  monthSections.forEach(section => {
+    const monthHeader = section.querySelector('h2, h3');
+    if (!monthHeader) return;
+    
+    const monthText = monthHeader.textContent.trim();
+    if (!isValidMonth(monthText)) return;
+    
+    const pendingElement = section.querySelector('p:contains("Pending Applications")') || 
+                          section.querySelector('p.font-medium');
+    if (!pendingElement) return;
+    
+    const matches = pendingElement.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+    if (!matches || matches.length < 3) return;
+    
+    pendingData.push({
+      month: cleanMonthText(monthText),
+      count: parseInt(matches[1].replace(/,/g, '')),
+      percentage: parseFloat(matches[2])
+    });
+  });
+  
+  // Extract completed cases
+  let completedCount = 0;
+  let completedPercentage = 0;
+  const completedElements = doc.querySelectorAll('p');
+  
+  for (const element of completedElements) {
+    if (element.textContent.includes('Total Completed Today')) {
+      const matches = element.textContent.match(/Total Completed Today:\s*<!--\s*-->(\d+).*?([\d.]+)%/);
+      if (matches) {
+        completedCount = parseInt(matches[1]);
+        completedPercentage = matches[2] ? parseFloat(matches[2]) : 0;
+      }
+      break;
+    }
+  }
+  
+  return {
+    pending: pendingData,
+    completed: {
+      count: completedCount,
+      percentage: completedPercentage
+    }
+  };
+}
+
+function updateApplicationState(newData) {
+  // Update pending applications
+  state.pending = newData.pending;
+  
+  // Add today's completed cases if valid
+  if (newData.completed.count > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    const existingIndex = state.completed.findIndex(entry => entry.date === today);
+    
+    if (existingIndex >= 0) {
+      // Update existing entry
+      state.completed[existingIndex] = {
+        date: today,
+        count: newData.completed.count,
+        percentage: newData.completed.percentage
+      };
+    } else {
+      // Add new entry
+      state.completed.unshift({
+        date: today,
+        count: newData.completed.count,
+        percentage: newData.completed.percentage
+      });
+      
+      // Trim to max allowed days
+      if (state.completed.length > CONFIG.MAX_COMPLETED_DAYS) {
+        state.completed = state.completed.slice(0, CONFIG.MAX_COMPLETED_DAYS);
+      }
+    }
+  }
+  
+  state.lastUpdated = new Date().toISOString();
+}
+
+// UI Rendering Functions
+function renderAllData() {
+  renderPendingData();
+  renderCompletedData();
+  updateLastUpdated();
+  renderCharts();
+}
+
+function renderPendingData() {
+  elements.pendingTableBody.innerHTML = '';
+  let totalPending = 0;
+  
+  state.pending.forEach(item => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${item.month}</td>
+      <td>${item.count.toLocaleString()}</td>
+      <td>${item.percentage}%</td>
+    `;
+    elements.pendingTableBody.appendChild(row);
+    totalPending += item.count;
+  });
+  
+  elements.totalPending.textContent = totalPending.toLocaleString();
+}
+
+function renderCompletedData() {
+  elements.completedTableBody.innerHTML = '';
+  let totalCompleted = 0;
+  
+  state.completed.forEach(item => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${formatDate(item.date)}</td>
+      <td>${item.count.toLocaleString()}</td>
+      <td>${item.percentage}%</td>
+    `;
+    elements.completedTableBody.appendChild(row);
+    totalCompleted += item.count;
+  });
+  
+  elements.totalCompleted.textContent = totalCompleted.toLocaleString();
+}
+
+function renderCharts() {
+  renderPendingChart();
+  renderCompletedChart();
+}
+
+function renderPendingChart() {
+  const ctx = document.getElementById('pendingChart').getContext('2d');
+  
+  if (charts.pending) {
+    charts.pending.destroy();
+  }
+  
+  if (state.pending.length > 0) {
+    charts.pending = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: state.pending.map(item => item.month),
+        datasets: [{
+          label: 'Pending Applications',
+          data: state.pending.map(item => item.count),
+          backgroundColor: 'rgba(52, 152, 219, 0.7)',
+          borderColor: 'rgba(52, 152, 219, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: getChartOptions('Month', 'Number of Applications')
+    });
+  }
+}
+
+function renderCompletedChart() {
+  const ctx = document.getElementById('completedChart').getContext('2d');
+  
+  if (charts.completed) {
+    charts.completed.destroy();
+  }
+  
+  if (state.completed.length > 0) {
+    // Show last 30 days for better visibility
+    const displayData = [...state.completed].slice(0, 30).reverse();
+    
+    charts.completed = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: displayData.map(item => formatDate(item.date, true)),
+        datasets: [{
+          label: 'Daily Completed Cases',
+          data: displayData.map(item => item.count),
+          backgroundColor: 'rgba(46, 204, 113, 0.2)',
+          borderColor: 'rgba(46, 204, 113, 1)',
+          borderWidth: 2,
+          tension: 0.1,
+          fill: true
+        }]
+      },
+      options: getChartOptions('Date', 'Number of Cases')
+    });
+  }
+}
+
+// Utility Functions
+function setupEventListeners() {
+  elements.refreshBtn.addEventListener('click', fetchData);
+  
+  // Add window event listeners
+  window.addEventListener('beforeunload', createBackup);
 }
 
 function startAutoRefresh() {
-    setInterval(fetchData, config.refreshInterval);
+  // Initial fetch already happened, just schedule next
+  scheduleNextRefresh();
 }
 
-// Fallback static data (optional, update with Puppeteer results)
-/*
-const staticData = {
-    pending: [
-        { month: "November 2023", count: 7110, percentage: 46.51 },
-        { month: "December 2023", count: 13860, percentage: 68.29 },
-        { month: "January 2024", count: 11189, percentage: 65.43 },
-        { month: "February 2024", count: 11251, percentage: 63.21 },
-        { month: "March 2024", count: 10145, percentage: 61.87 },
-        { month: "April 2024", count: 10622, percentage: 62.34 },
-        { month: "May 2024", count: 12705, percentage: 64.12 }
-    ],
-    completed: []
-};
-*/
+function scheduleNextRefresh() {
+  if (state.lastUpdated) {
+    const nextRefresh = new Date(new Date(state.lastUpdated).getTime() + CONFIG.REFRESH_INTERVAL);
+    elements.nextRefresh.textContent = formatDateTime(nextRefresh);
+  }
+}
+
+function updateLastUpdated() {
+  elements.lastUpdated.textContent = state.lastUpdated ? formatDateTime(state.lastUpdated) : 'Never';
+}
+
+function formatDateTime(dateString) {
+  const date = new Date(dateString);
+  return date.toLocaleString();
+}
+
+function formatDate(dateString, short = false) {
+  const date = new Date(dateString);
+  return short ? date.toLocaleDateString() : date.toISOString().split('T')[0];
+}
+
+function getChartOptions(xLabel, yLabel) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: yLabel
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: xLabel
+        }
+      }
+    }
+  };
+}
+
+function isValidMonth(text) {
+  return /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i.test(text);
+}
+
+function cleanMonthText(text) {
+  return text.replace(':', '').trim();
+}
