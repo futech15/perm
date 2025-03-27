@@ -10,7 +10,6 @@ function fetchData() {
             const allTextNodes = Array.from(doc.querySelectorAll("*"))
                 .filter(el => el.innerText && el.innerText.trim().length > 0);
 
-            // Find all "Pending Applications" elements, excluding the total
             const pendingElements = allTextNodes.filter(el => 
                 el.innerText.includes("Pending Applications") && 
                 !el.innerText.includes("173,427")
@@ -58,7 +57,6 @@ function fetchData() {
         .catch(error => console.error("Error fetching data:", error));
 }
 
-// Save daily change at 11:58 PM
 function saveDailyChange(count) {
     let today = new Date().toLocaleDateString();
     let savedData = JSON.parse(localStorage.getItem("dailyChanges")) || [];
@@ -71,7 +69,6 @@ function saveDailyChange(count) {
     updateDailyTable(savedData);
 }
 
-// Update Daily Completed Table
 function updateDailyTable(data) {
     let tableBody = document.getElementById("daily-data");
     tableBody.innerHTML = "";
@@ -83,10 +80,8 @@ function updateDailyTable(data) {
     });
 }
 
-// Auto-fetch data on page load
 fetchData();
 
-// Set an interval to update at 11:58 PM daily
 setInterval(() => {
     let now = new Date();
     if (now.getHours() === 23 && now.getMinutes() === 58) {
