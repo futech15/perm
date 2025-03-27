@@ -8,41 +8,37 @@ function fetchData() {
             let doc = parser.parseFromString(data.contents, 'text/html');
 
             // Get Pending Applications
-            const monthMap = {
-                "nov": "November 2023",
-                "dec": "December 2023",
-                "jan": "January 2024",
-                "feb": "February 2024",
-                "mar": "March 2024",
-                "apr": "April 2024",
-                "may": "May 2024"
-            };
+            let months = [
+                { id: "nov", name: "November 2023" },
+                { id: "dec", name: "December 2023" },
+                { id: "jan", name: "January 2024" },
+                { id: "feb", name: "February 2024" },
+                { id: "mar", name: "March 2024" },
+                { id: "apr", name: "April 2024" },
+                { id: "may", name: "May 2024" }
+            ];
+            
             let totalPending = 0;
 
-            // Get all p.font-medium elements
-            const pendingElements = Array.from(doc.querySelectorAll("p.font-medium"))
-                .filter(p => p.innerText.includes("Pending Applications"));
-
-            Object.keys(monthMap).forEach(month => {
-                // Find the element that matches the month by checking the preceding text or structure
-                const monthText = monthMap[month];
-                const element = pendingElements.find(p => {
-                    const prevSibling = p.previousElementSibling;
-                    return prevSibling && prevSibling.innerText.includes(monthText) ||
-                           p.innerText.includes(monthText);
-                });
-
+            months.forEach(month => {
+                // Find the paragraph that contains both the month name and "Pending Applications"
+                let elements = Array.from(doc.querySelectorAll("p.font-medium"));
+                let element = elements.find(p => 
+                    p.textContent.includes(month.name) && 
+                    p.textContent.includes("Pending Applications")
+                );
+                
                 if (element) {
-                    const value = element.innerText.match(/\d{1,}(?:,\d{3})*/);
+                    let value = element.textContent.match(/\d{1,3}(?:,\d{3})*/);
                     if (value) {
                         let pendingCount = parseInt(value[0].replace(/,/g, ''));
-                        document.getElementById(`pending-${month}`).innerText = pendingCount.toLocaleString();
+                        document.getElementById(`pending-${month.id}`).innerText = pendingCount.toLocaleString();
                         totalPending += pendingCount;
                     } else {
-                        document.getElementById(`pending-${month}`).innerText = "Not Found";
+                        document.getElementById(`pending-${month.id}`).innerText = "Not Found";
                     }
                 } else {
-                    document.getElementById(`pending-${month}`).innerText = "Not Found";
+                    document.getElementById(`pending-${month.id}`).innerText = "Not Found";
                 }
             });
 
@@ -50,9 +46,7 @@ function fetchData() {
             document.getElementById("total-pending").innerText = totalPending.toLocaleString();
 
             // Get Total Completed Today
-            let completedElement = Array.from(doc.querySelectorAll("p")).find(p => 
-                p.innerText.includes("Total Completed Today")
-            );
+            let completedElement = Array.from(doc.querySelectorAll("p")).find(p => p.innerText.includes("Total Completed Today"));
             if (completedElement) {
                 let completedCount = completedElement.innerText.match(/\d+/)?.[0];
                 saveDailyChange(completedCount);
