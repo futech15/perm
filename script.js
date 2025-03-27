@@ -58,6 +58,7 @@ function fetchData() {
         .catch(error => console.error("Error fetching data:", error));
 }
 
+// Save daily change at 11:58 PM
 function saveDailyChange(count) {
     let today = new Date().toLocaleDateString();
     let savedData = JSON.parse(localStorage.getItem("dailyChanges")) || [];
@@ -70,6 +71,7 @@ function saveDailyChange(count) {
     updateDailyTable(savedData);
 }
 
+// Update Daily Completed Table
 function updateDailyTable(data) {
     let tableBody = document.getElementById("daily-data");
     tableBody.innerHTML = "";
@@ -81,10 +83,10 @@ function updateDailyTable(data) {
     });
 }
 
-// Fetch data on page load
+// Auto-fetch data on page load
 fetchData();
 
-// Update at 11:58 PM daily
+// Set an interval to update at 11:58 PM daily
 setInterval(() => {
     let now = new Date();
     if (now.getHours() === 23 && now.getMinutes() === 58) {
