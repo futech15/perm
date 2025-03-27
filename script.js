@@ -66,38 +66,43 @@ async function fetchData() {
         const parser = new DOMParser();
         const htmlDoc = parser.parseFromString(data.contents, 'text/html');
         
-        // Extract pending applications data
-        const pendingElements = htmlDoc.querySelectorAll('.font-medium');
+        // Extract pending applications data with proper month names
         const pendingData = [];
         
-        pendingElements.forEach(el => {
-            const text = el.textContent.trim();
-            if (text.includes('Pending Applications')) {
-                const matches = text.match(/Pending Applications: ([0-9,]+) \(([0-9.]+)%\)/);
-                if (matches && matches.length === 3) {
-                    const month = el.closest('h3, h2, h1')?.textContent.trim() || 'Unknown Month';
-                    pendingData.push({
-                        month: month.replace(':', '').trim(),
-                        count: parseInt(matches[1].replace(/,/g, '')),
-                        percentage: parseFloat(matches[2])
-                    });
+        // Find all h3 elements that likely contain month names
+        const monthHeaders = htmlDoc.querySelectorAll('h3');
+        
+        monthHeaders.forEach(header => {
+            const monthText = header.textContent.trim();
+            if (monthText.match(/(January|February|March|April|May|June|July|August|September|October|November|December) \d{4}/)) {
+                const pendingElement = header.nextElementSibling;
+                if (pendingElement && pendingElement.textContent.includes('Pending Applications')) {
+                    const matches = pendingElement.textContent.match(/Pending Applications: ([0-9,]+) \(([0-9.]+)%\)/);
+                    if (matches && matches.length === 3) {
+                        pendingData.push({
+                            month: monthText.replace(':', '').trim(),
+                            count: parseInt(matches[1].replace(/,/g, '')),
+                            percentage: parseFloat(matches[2])
+                        });
+                    }
                 }
             }
         });
         
         // Extract completed cases
-        const completedText = Array.from(htmlDoc.querySelectorAll('p'))
-            .find(p => p.textContent.includes('Total Completed Today'))?.textContent;
-        
+        const completedElements = htmlDoc.querySelectorAll('p');
         let completedCount = 0;
         let completedPercentage = 0;
         
-        if (completedText) {
-            const matches = completedText.match(/Total Completed Today: <!-- -->([0-9]+).*?([0-9.]+)%/);
-            if (matches && matches.length >= 2) {
-                completedCount = parseInt(matches[1]);
-                if (matches[2]) {
-                    completedPercentage = parseFloat(matches[2]);
+        for (const p of completedElements) {
+            if (p.textContent.includes('Total Completed Today')) {
+                const matches = p.textContent.match(/Total Completed Today: <!-- -->([0-9]+).*?([0-9.]+)%/);
+                if (matches && matches.length >= 2) {
+                    completedCount = parseInt(matches[1]);
+                    if (matches[2]) {
+                        completedPercentage = parseFloat(matches[2]);
+                    }
+                    break;
                 }
             }
         }
@@ -139,6 +144,8 @@ async function fetchData() {
         scheduleNextRefresh();
     }
 }
+
+// ... (rest of the code remains the same as previous version)
 
 function renderTables() {
     // Render pending table
