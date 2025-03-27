@@ -15,7 +15,7 @@
         <div class="data-section">
             <h2>Pending Applications</h2>
             <div class="controls">
-                <button id="fetchPendingBtn">Fetch Latest Pending Data</button>
+                <button id="addPendingBtn">Add Pending Data</button>
                 <button id="clearPendingBtn">Clear Pending Data</button>
             </div>
             <div class="table-container">
@@ -25,6 +25,7 @@
                             <th>Month</th>
                             <th>Pending Applications</th>
                             <th>Percentage</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -32,6 +33,7 @@
                         <tr>
                             <th>Total</th>
                             <th id="totalPending">0</th>
+                            <th></th>
                             <th></th>
                         </tr>
                     </tfoot>
@@ -45,7 +47,7 @@
         <div class="data-section">
             <h2>Daily Completed Cases</h2>
             <div class="controls">
-                <button id="fetchCompletedBtn">Fetch Today's Completed</button>
+                <button id="addCompletedBtn">Add Completed Data</button>
                 <button id="clearCompletedBtn">Clear Completed Data</button>
             </div>
             <div class="table-container">
@@ -55,6 +57,7 @@
                             <th>Date</th>
                             <th>Completed Cases</th>
                             <th>Percentage</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -63,12 +66,40 @@
                             <th>Total</th>
                             <th id="totalCompleted">0</th>
                             <th></th>
+                            <th></th>
                         </tr>
                     </tfoot>
                 </table>
             </div>
             <div class="chart-container">
                 <canvas id="completedChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Modal for adding data -->
+        <div id="dataModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h3 id="modalTitle">Add Data</h3>
+                <form id="dataForm">
+                    <div id="monthField" class="form-group">
+                        <label for="month">Month:</label>
+                        <input type="text" id="month" required>
+                    </div>
+                    <div id="dateField" class="form-group" style="display:none;">
+                        <label for="date">Date:</label>
+                        <input type="date" id="date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="count">Count:</label>
+                        <input type="number" id="count" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="percentage">Percentage:</label>
+                        <input type="number" step="0.01" id="percentage" required>
+                    </div>
+                    <button type="submit">Save</button>
+                </form>
             </div>
         </div>
         
