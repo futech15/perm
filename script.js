@@ -7,63 +7,66 @@ function fetchData() {
             let parser = new DOMParser();
             let doc = parser.parseFromString(data.contents, 'text/html');
 
-            console.log("Fetched HTML Content:\n", data.contents); // Debug: Print entire fetched HTML
-
-            // Select all relevant paragraphs
-            const elements = doc.querySelectorAll("p.font-medium");
-
-            console.log("Extracted Elements Count:", elements.length); // Debug: How many elements were found?
-            elements.forEach(el => console.log("Element Text:", el.innerText)); // Debug: Print all extracted text
-
+            // Get Pending Applications
             const monthMap = {
-                "November 2023": "nov",
-                "December 2023": "dec",
-                "January 2024": "jan",
-                "February 2024": "feb",
-                "March 2024": "mar",
-                "April 2024": "apr",
-                "May 2024": "may"
+                "nov": "November 2023",
+                "dec": "December 2023",
+                "jan": "January 2024",
+                "feb": "February 2024",
+                "mar": "March 2024",
+                "apr": "April 2024",
+                "may": "May 2024"
             };
-
             let totalPending = 0;
 
-            elements.forEach(el => {
-                let text = el.innerText.trim();
+            // Get all p.font-medium elements
+            const pendingElements = Array.from(doc.querySelectorAll("p.font-medium"))
+                .filter(p => p.innerText.includes("Pending Applications"));
 
-                // Match lines containing "Pending Applications"
-                let match = text.match(/(November|December|January|February|March|April|May)\s+\d{4}.*?Pending Applications:\s*([\d,]+)/i);
-                
-                if (match) {
-                    let monthName = `${match[1]} 2023`; // Adjust dynamically if needed
-                    let pendingCount = parseInt(match[2].replace(/,/g, ''), 10);
+            Object.keys(monthMap).forEach(month => {
+                // Find the element that matches the month by checking the preceding text or structure
+                const monthText = monthMap[month];
+                const element = pendingElements.find(p => {
+                    const prevSibling = p.previousElementSibling;
+                    return prevSibling && prevSibling.innerText.includes(monthText) ||
+                           p.innerText.includes(monthText);
+                });
 
-                    console.log(`Assigned ${monthName}: ${pendingCount}`); // Debug: See exact assigned values
-
-                    if (monthMap[monthName]) {
-                        let monthKey = monthMap[monthName];
-                        document.getElementById(`pending-${monthKey}`).innerText = pendingCount.toLocaleString();
+                if (element) {
+                    const value = element.innerText.match(/\d{1,}(?:,\d{3})*/);
+                    if (value) {
+                        let pendingCount = parseInt(value[0].replace(/,/g, ''));
+                        document.getElementById(`pending-${month}`).innerText = pendingCount.toLocaleString();
                         totalPending += pendingCount;
+                    } else {
+                        document.getElementById(`pending-${month}`).innerText = "Not Found";
                     }
                 } else {
-                    console.warn("No match found for:", text); // Debug: Identify any missed elements
+                    document.getElementById(`pending-${month}`).innerText = "Not Found";
                 }
             });
 
-            // Update total pending count
+            // Update total pending
             document.getElementById("total-pending").innerText = totalPending.toLocaleString();
+
+            // Get Total Completed Today
+            let completedElement = Array.from(doc.querySelectorAll("p")).find(p => 
+                p.innerText.includes("Total Completed Today")
+            );
+            if (completedElement) {
+                let completedCount = completedElement.innerText.match(/\d+/)?.[0];
+                saveDailyChange(completedCount);
+            }
         })
         .catch(error => console.error("Error fetching data:", error));
 }
-
-fetchData();
-
-
 
 // Save daily change at 11:58 PM
 function saveDailyChange(count) {
     let today = new Date().toLocaleDateString();
     let savedData = JSON.parse(localStorage.getItem("dailyChanges")) || [];
 
+    // Prevent duplicate entries for today
     if (!savedData.some(entry => entry.date === today)) {
         savedData.push({ date: today, count: count });
         localStorage.setItem("dailyChanges", JSON.stringify(savedData));
@@ -93,4 +96,4 @@ setInterval(() => {
     if (now.getHours() === 23 && now.getMinutes() === 58) {
         fetchData();
     }
-}, 60000);
+}, 60000); // Check every minute
