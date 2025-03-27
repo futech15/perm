@@ -7,8 +7,12 @@ function fetchData() {
             let parser = new DOMParser();
             let doc = parser.parseFromString(data.contents, 'text/html');
 
+            console.log("Fetched HTML:", data.contents); // DEBUGGING: Print the entire fetched HTML
+
             // Select all paragraphs with class "font-medium"
             const elements = doc.querySelectorAll("p.font-medium");
+
+            console.log("Extracted Paragraphs:", elements); // DEBUGGING: Print all matched elements
 
             const monthMap = {
                 "November 2023": "nov",
@@ -23,6 +27,8 @@ function fetchData() {
             let totalPending = 0;
 
             elements.forEach(el => {
+                console.log("Processing Element:", el.innerText); // DEBUGGING: Print each paragraph content
+
                 // Extract month and pending applications count
                 let match = el.innerText.match(/(November|December|January|February|March|April|May)\s+\d{4}.*?Pending Applications:\s+([\d,]+)/i);
                 
@@ -30,11 +36,15 @@ function fetchData() {
                     let monthName = `${match[1]} 2023`; // Adjust year dynamically if needed
                     let pendingCount = parseInt(match[2].replace(/,/g, ''));
 
+                    console.log(`Found: ${monthName} - ${pendingCount}`); // DEBUGGING: Print extracted values
+
                     if (monthMap[monthName]) {
                         let monthKey = monthMap[monthName];
                         document.getElementById(`pending-${monthKey}`).innerText = pendingCount.toLocaleString();
                         totalPending += pendingCount;
                     }
+                } else {
+                    console.warn("No match found for:", el.innerText); // DEBUGGING: Warn if a match isn’t found
                 }
             });
 
@@ -47,6 +57,7 @@ function fetchData() {
 
             if (completedElement) {
                 let completedCount = completedElement.innerText.match(/\d+/)?.[0];
+                console.log("Total Completed Today:", completedCount); // DEBUGGING: Log extracted completed count
                 saveDailyChange(completedCount);
             }
         })
