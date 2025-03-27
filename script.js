@@ -7,48 +7,44 @@ function fetchData() {
             let parser = new DOMParser();
             let doc = parser.parseFromString(data.contents, 'text/html');
 
-            const allTextNodes = Array.from(doc.querySelectorAll("*"))
-                .filter(el => el.innerText && el.innerText.trim().length > 0);
-
-            const pendingElements = allTextNodes.filter(el => 
-                el.innerText.includes("Pending Applications") && 
-                !el.innerText.includes("173,427")
-            );
-            console.log("Pending Applications found:", pendingElements.map(el => el.innerText));
+            // Select all paragraphs with class "font-medium"
+            const elements = doc.querySelectorAll("p.font-medium");
 
             const monthMap = {
-                "nov": "November 2023",
-                "dec": "December 2023",
-                "jan": "January 2024",
-                "feb": "February 2024",
-                "mar": "March 2024",
-                "apr": "April 2024",
-                "may": "May 2024"
+                "November 2023": "nov",
+                "December 2023": "dec",
+                "January 2024": "jan",
+                "February 2024": "feb",
+                "March 2024": "mar",
+                "April 2024": "apr",
+                "May 2024": "may"
             };
+
             let totalPending = 0;
 
-            Object.keys(monthMap).forEach((month, index) => {
-                let pendingCount = null;
+            elements.forEach(el => {
+                // Extract month and pending applications count
+                let match = el.innerText.match(/(November|December|January|February|March|April|May)\s+\d{4}.*?Pending Applications:\s+([\d,]+)/i);
+                
+                if (match) {
+                    let monthName = `${match[1]} 2023`; // Adjust year dynamically if needed
+                    let pendingCount = parseInt(match[2].replace(/,/g, ''));
 
-                if (index < pendingElements.length) {
-                    const value = pendingElements[index].innerText.match(/\d{1,}(?:,\d{3})*/);
-                    if (value) {
-                        pendingCount = parseInt(value[0].replace(/,/g, ''));
-                        console.log(`Assigned ${monthMap[month]}:`, pendingCount);
+                    if (monthMap[monthName]) {
+                        let monthKey = monthMap[monthName];
+                        document.getElementById(`pending-${monthKey}`).innerText = pendingCount.toLocaleString();
+                        totalPending += pendingCount;
                     }
-                }
-
-                if (pendingCount !== null) {
-                    document.getElementById(`pending-${month}`).innerText = pendingCount.toLocaleString();
-                    totalPending += pendingCount;
-                } else {
-                    document.getElementById(`pending-${month}`).innerText = "Not Found";
                 }
             });
 
+            // Update total pending count
             document.getElementById("total-pending").innerText = totalPending.toLocaleString();
 
-            const completedElement = allTextNodes.find(el => el.innerText.includes("Total Completed Today"));
+            // Extract "Total Completed Today" value
+            const completedElement = Array.from(doc.querySelectorAll("p"))
+                .find(p => p.innerText.includes("Total Completed Today"));
+
             if (completedElement) {
                 let completedCount = completedElement.innerText.match(/\d+/)?.[0];
                 saveDailyChange(completedCount);
@@ -82,6 +78,7 @@ function updateDailyTable(data) {
 
 fetchData();
 
+// Auto-refresh at 23:58
 setInterval(() => {
     let now = new Date();
     if (now.getHours() === 23 && now.getMinutes() === 58) {
