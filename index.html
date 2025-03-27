@@ -3,47 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Permit Timeline Data</title>
+    <title>Green Card Timeline Tracker</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <h1>Perm Timeline Data</h1>
-
-    <!-- Pending Applications Table -->
-    <h2>Pending Applications</h2>
-    <table id="pending-table">
-        <thead>
-            <tr>
-                <th>Month</th>
-                <th>Pending Applications</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td>November 2023</td><td id="pending-nov">Loading...</td></tr>
-            <tr><td>December 2023</td><td id="pending-dec">Loading...</td></tr>
-            <tr><td>January 2024</td><td id="pending-jan">Loading...</td></tr>
-            <tr><td>February 2024</td><td id="pending-feb">Loading...</td></tr>
-            <tr><td>March 2024</td><td id="pending-mar">Loading...</td></tr>
-            <tr><td>April 2024</td><td id="pending-apr">Loading...</td></tr>
-            <tr><td>May 2024</td><td id="pending-may">Loading...</td></tr>
-            <tr><th>Total</th><th id="total-pending">Loading...</th></tr>
-        </tbody>
-    </table>
-
-    <!-- Completed Cases  -->
-    <h2>Completed Cases</h2>
-    <table id="daily-table">
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Completed Cases</th>
-            </tr>
-        </thead>
-        <tbody id="daily-data">
-            <!-- Daily records will be inserted here -->
-        </tbody>
-    </table>
-
+    <div class="container">
+        <h1>Green Card Timeline Tracker</h1>
+        <p>Data sourced from <a href="https://permtimeline.com" target="_blank">permtimeline.com</a></p>
+        
+        <div class="data-section">
+            <h2>Pending Applications</h2>
+            <div class="controls">
+                <button id="fetchPendingBtn">Fetch Latest Pending Data</button>
+                <button id="clearPendingBtn">Clear Pending Data</button>
+            </div>
+            <div class="table-container">
+                <table id="pendingTable">
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Pending Applications</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total</th>
+                            <th id="totalPending">0</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div class="chart-container">
+                <canvas id="pendingChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="data-section">
+            <h2>Daily Completed Cases</h2>
+            <div class="controls">
+                <button id="fetchCompletedBtn">Fetch Today's Completed</button>
+                <button id="clearCompletedBtn">Clear Completed Data</button>
+            </div>
+            <div class="table-container">
+                <table id="completedTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Completed Cases</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total</th>
+                            <th id="totalCompleted">0</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div class="chart-container">
+                <canvas id="completedChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="last-updated">
+            <p>Last updated: <span id="lastUpdated">Never</span></p>
+        </div>
+    </div>
+    
     <script src="script.js"></script>
 </body>
 </html>
