@@ -40,7 +40,8 @@ h2 {
 .controls {
     margin: 15px 0;
     display: flex;
-    gap: 10px;
+    align-items: center;
+    gap: 15px;
 }
 
 button {
@@ -61,6 +62,11 @@ button:hover {
 button:disabled {
     background-color: #95a5a6;
     cursor: not-allowed;
+}
+
+#status {
+    color: #7f8c8d;
+    font-style: italic;
 }
 
 .table-container {
@@ -118,78 +124,4 @@ a:hover {
     th, td {
         padding: 8px 10px;
     }
-}
-
-/* Previous CSS remains the same, add these new styles at the end */
-
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 1;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.4);
-}
-
-.modal-content {
-    background-color: #fefefe;
-    margin: 15% auto;
-    padding: 20px;
-    border: 1px solid #888;
-    width: 80%;
-    max-width: 500px;
-    border-radius: 8px;
-}
-
-.close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-}
-
-.close:hover {
-    color: black;
-}
-
-.form-group {
-    margin-bottom: 15px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
-}
-
-.form-group input {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    box-sizing: border-box;
-}
-
-button[type="submit"] {
-    background-color: #2ecc71;
-    width: 100%;
-    padding: 10px;
-    margin-top: 10px;
-}
-
-button[type="submit"]:hover {
-    background-color: #27ae60;
-}
-
-.action-btn {
-    background-color: #e74c3c;
-    padding: 5px 10px;
-    font-size: 12px;
-}
-
-.action-btn:hover {
-    background-color: #c0392b;
 }
