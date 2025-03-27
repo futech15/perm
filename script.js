@@ -1,13 +1,13 @@
+// Configuration
+const config = {
+    proxyUrl: 'https://api.allorigins.win/get?url=https://permtimeline.com/',
+    refreshInterval: 60 * 60 * 1000, // 1 hour in milliseconds
+    maxCompletedDays: 30 // Keep last 30 days of completed cases
+};
+
 // Data storage
 let appData = {
-    pending: [
-        { month: 'November 2023', count: 7167, percentage: 46.89 },
-        { month: 'December 2023', count: 13860, percentage: 95.29 },
-        { month: 'January 2024', count: 11189, percentage: 94.23 },
-        { month: 'February 2024', count: 11251, percentage: 95.96 },
-        { month: 'March 2024', count: 10145, percentage: 96.31 },
-        { month: 'April 2024', count: 10622, percentage: 96.35 }
-    ],
+    pending: [],
     completed: [],
     lastUpdated: null
 };
@@ -18,136 +18,125 @@ const completedTableBody = document.querySelector('#completedTable tbody');
 const totalPendingElement = document.getElementById('totalPending');
 const totalCompletedElement = document.getElementById('totalCompleted');
 const lastUpdatedElement = document.getElementById('lastUpdated');
-const addPendingBtn = document.getElementById('addPendingBtn');
-const clearPendingBtn = document.getElementById('clearPendingBtn');
-const addCompletedBtn = document.getElementById('addCompletedBtn');
-const clearCompletedBtn = document.getElementById('clearCompletedBtn');
-const modal = document.getElementById('dataModal');
-const closeBtn = document.querySelector('.close');
-const modalTitle = document.getElementById('modalTitle');
-const dataForm = document.getElementById('dataForm');
-const monthField = document.getElementById('monthField');
-const dateField = document.getElementById('dateField');
-const monthInput = document.getElementById('month');
-const dateInput = document.getElementById('date');
-const countInput = document.getElementById('count');
-const percentageInput = document.getElementById('percentage');
+const nextRefreshElement = document.getElementById('nextRefresh');
+const refreshBtn = document.getElementById('refreshBtn');
+const statusElement = document.getElementById('status');
 
 // Charts
 let pendingChart;
 let completedChart;
 
-// Track whether we're adding pending or completed data
-let currentDataType = null;
-
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
     setupEventListeners();
-    renderTables();
-    renderCharts();
-    updateLastUpdated();
+    fetchData();
+    startAutoRefresh();
 });
 
 function setupEventListeners() {
-    addPendingBtn.addEventListener('click', () => openModal('pending'));
-    clearPendingBtn.addEventListener('click', clearPendingData);
-    addCompletedBtn.addEventListener('click', () => openModal('completed'));
-    clearCompletedBtn.addEventListener('click', clearCompletedData);
-    closeBtn.addEventListener('click', closeModal);
-    dataForm.addEventListener('submit', saveData);
-}
-
-function openModal(dataType) {
-    currentDataType = dataType;
-    
-    if (dataType === 'pending') {
-        modalTitle.textContent = 'Add Pending Data';
-        monthField.style.display = 'block';
-        dateField.style.display = 'none';
-    } else {
-        modalTitle.textContent = 'Add Completed Data';
-        monthField.style.display = 'none';
-        dateField.style.display = 'block';
-        dateInput.valueAsDate = new Date();
-    }
-    
-    // Clear form
-    monthInput.value = '';
-    countInput.value = '';
-    percentageInput.value = '';
-    
-    modal.style.display = 'block';
-}
-
-function closeModal() {
-    modal.style.display = 'none';
-}
-
-function saveData(e) {
-    e.preventDefault();
-    
-    const count = parseInt(countInput.value);
-    const percentage = parseFloat(percentageInput.value);
-    
-    if (currentDataType === 'pending') {
-        const month = monthInput.value;
-        appData.pending.push({ month, count, percentage });
-    } else {
-        const date = dateInput.value;
-        appData.completed.push({ date, count, percentage });
-        // Sort by date (newest first)
-        appData.completed.sort((a, b) => new Date(b.date) - new Date(a.date));
-    }
-    
-    appData.lastUpdated = new Date().toISOString();
-    
-    saveToLocalStorage();
-    renderTables();
-    renderCharts();
-    updateLastUpdated();
-    closeModal();
+    refreshBtn.addEventListener('click', fetchData);
 }
 
 function loadData() {
     const savedData = localStorage.getItem('gcTimelineData');
     if (savedData) {
         appData = JSON.parse(savedData);
+        renderTables();
+        renderCharts();
+        updateLastUpdated();
     }
 }
 
-function saveToLocalStorage() {
+function saveData() {
     localStorage.setItem('gcTimelineData', JSON.stringify(appData));
 }
 
-function updateLastUpdated() {
-    if (appData.lastUpdated) {
-        const date = new Date(appData.lastUpdated);
-        lastUpdatedElement.textContent = date.toLocaleString();
-    } else {
-        lastUpdatedElement.textContent = 'Never';
-    }
-}
-
-function clearPendingData() {
-    if (confirm('Are you sure you want to clear all pending data?')) {
-        appData.pending = [];
+async function fetchData() {
+    try {
+        refreshBtn.disabled = true;
+        statusElement.textContent = 'Fetching latest data...';
+        
+        const response = await fetch(config.proxyUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const data = await response.json();
+        if (!data.contents) throw new Error('No content received from proxy');
+        
+        const parser = new DOMParser();
+        const htmlDoc = parser.parseFromString(data.contents, 'text/html');
+        
+        // Extract pending applications data
+        const pendingElements = htmlDoc.querySelectorAll('.font-medium');
+        const pendingData = [];
+        
+        pendingElements.forEach(el => {
+            const text = el.textContent.trim();
+            if (text.includes('Pending Applications')) {
+                const matches = text.match(/Pending Applications: ([0-9,]+) \(([0-9.]+)%\)/);
+                if (matches && matches.length === 3) {
+                    const month = el.closest('h3, h2, h1')?.textContent.trim() || 'Unknown Month';
+                    pendingData.push({
+                        month: month.replace(':', '').trim(),
+                        count: parseInt(matches[1].replace(/,/g, '')),
+                        percentage: parseFloat(matches[2])
+                    });
+                }
+            }
+        });
+        
+        // Extract completed cases
+        const completedText = Array.from(htmlDoc.querySelectorAll('p'))
+            .find(p => p.textContent.includes('Total Completed Today'))?.textContent;
+        
+        let completedCount = 0;
+        let completedPercentage = 0;
+        
+        if (completedText) {
+            const matches = completedText.match(/Total Completed Today: <!-- -->([0-9]+).*?([0-9.]+)%/);
+            if (matches && matches.length >= 2) {
+                completedCount = parseInt(matches[1]);
+                if (matches[2]) {
+                    completedPercentage = parseFloat(matches[2]);
+                }
+            }
+        }
+        
+        // Update app data
+        appData.pending = pendingData;
+        
+        // Add today's completed data if it's new
+        const today = new Date().toISOString().split('T')[0];
+        const hasTodayData = appData.completed.some(entry => entry.date === today);
+        
+        if (!hasTodayData && completedCount > 0) {
+            appData.completed.unshift({
+                date: today,
+                count: completedCount,
+                percentage: completedPercentage
+            });
+            
+            // Keep only the most recent days
+            if (appData.completed.length > config.maxCompletedDays) {
+                appData.completed = appData.completed.slice(0, config.maxCompletedDays);
+            }
+        }
+        
         appData.lastUpdated = new Date().toISOString();
-        saveToLocalStorage();
+        
+        saveData();
         renderTables();
         renderCharts();
         updateLastUpdated();
-    }
-}
-
-function clearCompletedData() {
-    if (confirm('Are you sure you want to clear all completed data?')) {
-        appData.completed = [];
-        appData.lastUpdated = new Date().toISOString();
-        saveToLocalStorage();
-        renderTables();
-        renderCharts();
-        updateLastUpdated();
+        
+        statusElement.textContent = 'Data updated successfully!';
+        setTimeout(() => statusElement.textContent = '', 3000);
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        statusElement.textContent = `Error: ${error.message}`;
+    } finally {
+        refreshBtn.disabled = false;
+        scheduleNextRefresh();
     }
 }
 
@@ -156,13 +145,12 @@ function renderTables() {
     pendingTableBody.innerHTML = '';
     let totalPending = 0;
     
-    appData.pending.forEach((item, index) => {
+    appData.pending.forEach(item => {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${item.month}</td>
             <td>${item.count.toLocaleString()}</td>
             <td>${item.percentage}%</td>
-            <td><button class="action-btn" data-index="${index}" data-type="pending">Delete</button></td>
         `;
         pendingTableBody.appendChild(row);
         totalPending += item.count;
@@ -170,22 +158,11 @@ function renderTables() {
     
     totalPendingElement.textContent = totalPending.toLocaleString();
     
-    // Add event listeners to delete buttons
-    document.querySelectorAll('.action-btn[data-type="pending"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const index = parseInt(e.target.getAttribute('data-index'));
-            appData.pending.splice(index, 1);
-            saveToLocalStorage();
-            renderTables();
-            renderCharts();
-        });
-    });
-    
     // Render completed table
     completedTableBody.innerHTML = '';
     let totalCompleted = 0;
     
-    appData.completed.forEach((item, index) => {
+    appData.completed.forEach(item => {
         const date = new Date(item.date);
         const dateStr = date.toLocaleDateString();
         
@@ -194,24 +171,12 @@ function renderTables() {
             <td>${dateStr}</td>
             <td>${item.count.toLocaleString()}</td>
             <td>${item.percentage}%</td>
-            <td><button class="action-btn" data-index="${index}" data-type="completed">Delete</button></td>
         `;
         completedTableBody.appendChild(row);
         totalCompleted += item.count;
     });
     
     totalCompletedElement.textContent = totalCompleted.toLocaleString();
-    
-    // Add event listeners to delete buttons
-    document.querySelectorAll('.action-btn[data-type="completed"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const index = parseInt(e.target.getAttribute('data-index'));
-            appData.completed.splice(index, 1);
-            saveToLocalStorage();
-            renderTables();
-            renderCharts();
-        });
-    });
 }
 
 function renderCharts() {
@@ -265,16 +230,13 @@ function renderCharts() {
     }
     
     if (appData.completed.length > 0) {
-        // Limit to last 30 days for better visibility
-        const recentCompleted = [...appData.completed].reverse().slice(0, 30);
-        
         completedChart = new Chart(completedCtx, {
             type: 'line',
             data: {
-                labels: recentCompleted.map(item => new Date(item.date).toLocaleDateString()),
+                labels: appData.completed.map(item => new Date(item.date).toLocaleDateString()),
                 datasets: [{
                     label: 'Daily Completed Cases',
-                    data: recentCompleted.map(item => item.count),
+                    data: appData.completed.map(item => item.count),
                     backgroundColor: 'rgba(46, 204, 113, 0.2)',
                     borderColor: 'rgba(46, 204, 113, 1)',
                     borderWidth: 2,
@@ -305,9 +267,24 @@ function renderCharts() {
     }
 }
 
-// Close modal when clicking outside of it
-window.addEventListener('click', (e) => {
-    if (e.target === modal) {
-        closeModal();
+function updateLastUpdated() {
+    if (appData.lastUpdated) {
+        const date = new Date(appData.lastUpdated);
+        lastUpdatedElement.textContent = date.toLocaleString();
+    } else {
+        lastUpdatedElement.textContent = 'Never';
     }
-});
+}
+
+function startAutoRefresh() {
+    fetchData(); // Initial fetch
+    setInterval(fetchData, config.refreshInterval);
+    scheduleNextRefresh();
+}
+
+function scheduleNextRefresh() {
+    if (appData.lastUpdated) {
+        const nextRefresh = new Date(new Date(appData.lastUpdated).getTime() + config.refreshInterval);
+        nextRefreshElement.textContent = new Date(nextRefresh).toLocaleString();
+    }
+}
