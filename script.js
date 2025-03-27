@@ -7,12 +7,13 @@ function fetchData() {
             let parser = new DOMParser();
             let doc = parser.parseFromString(data.contents, 'text/html');
 
-            console.log("Fetched HTML:", data.contents); // DEBUGGING: Print the entire fetched HTML
+            console.log("Fetched HTML Content:\n", data.contents); // Debug: Print entire fetched HTML
 
-            // Select all paragraphs with class "font-medium"
+            // Select all relevant paragraphs
             const elements = doc.querySelectorAll("p.font-medium");
 
-            console.log("Extracted Paragraphs:", elements); // DEBUGGING: Print all matched elements
+            console.log("Extracted Elements Count:", elements.length); // Debug: How many elements were found?
+            elements.forEach(el => console.log("Element Text:", el.innerText)); // Debug: Print all extracted text
 
             const monthMap = {
                 "November 2023": "nov",
@@ -27,16 +28,16 @@ function fetchData() {
             let totalPending = 0;
 
             elements.forEach(el => {
-                console.log("Processing Element:", el.innerText); // DEBUGGING: Print each paragraph content
+                let text = el.innerText.trim();
 
-                // Extract month and pending applications count
-                let match = el.innerText.match(/(November|December|January|February|March|April|May)\s+\d{4}.*?Pending Applications:\s+([\d,]+)/i);
+                // Match lines containing "Pending Applications"
+                let match = text.match(/(November|December|January|February|March|April|May)\s+\d{4}.*?Pending Applications:\s*([\d,]+)/i);
                 
                 if (match) {
-                    let monthName = `${match[1]} 2023`; // Adjust year dynamically if needed
-                    let pendingCount = parseInt(match[2].replace(/,/g, ''));
+                    let monthName = `${match[1]} 2023`; // Adjust dynamically if needed
+                    let pendingCount = parseInt(match[2].replace(/,/g, ''), 10);
 
-                    console.log(`Found: ${monthName} - ${pendingCount}`); // DEBUGGING: Print extracted values
+                    console.log(`Assigned ${monthName}: ${pendingCount}`); // Debug: See exact assigned values
 
                     if (monthMap[monthName]) {
                         let monthKey = monthMap[monthName];
@@ -44,25 +45,18 @@ function fetchData() {
                         totalPending += pendingCount;
                     }
                 } else {
-                    console.warn("No match found for:", el.innerText); // DEBUGGING: Warn if a match isn’t found
+                    console.warn("No match found for:", text); // Debug: Identify any missed elements
                 }
             });
 
             // Update total pending count
             document.getElementById("total-pending").innerText = totalPending.toLocaleString();
-
-            // Extract "Total Completed Today" value
-            const completedElement = Array.from(doc.querySelectorAll("p"))
-                .find(p => p.innerText.includes("Total Completed Today"));
-
-            if (completedElement) {
-                let completedCount = completedElement.innerText.match(/\d+/)?.[0];
-                console.log("Total Completed Today:", completedCount); // DEBUGGING: Log extracted completed count
-                saveDailyChange(completedCount);
-            }
         })
         .catch(error => console.error("Error fetching data:", error));
 }
+
+fetchData();
+
 
 function saveDailyChange(count) {
     let today = new Date().toLocaleDateString();
