@@ -147,37 +147,50 @@ function processHtmlData(html) {
 }
 
 function updateNovemberData(doc) {
-  const sections = Array.from(doc.querySelectorAll('section.timeline-entry, div.timeline-section'));
-  
-  const novemberSection = sections.find(section => {
-    const header = section.querySelector('h2, h3');
-    return header && /November/i.test(header.textContent);
-  });
+  console.log("Parsing fetched HTML...");
 
-  if (novemberSection) {
-    const pendingMatch = novemberSection.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+  // Log the full HTML response for debugging
+  console.log(doc.documentElement.outerHTML);
 
-    if (pendingMatch) {
-      const newCount = parseInt(pendingMatch[1].replace(/,/g, ''), 10);
-      const newPercent = parseFloat(pendingMatch[2]);
+  // Select sections where data is expected
+  const sections = Array.from(doc.querySelectorAll('section, div'));
 
-      // Update state
-      const novemberIndex = state.pendingData.findIndex(m => /November/i.test(m.month));
-      if (novemberIndex !== -1) {
-        state.pendingData[novemberIndex].count = newCount;
-        state.pendingData[novemberIndex].percentage = newPercent;
-      }
+  // Log found sections
+  console.log("Found sections:", sections.length);
 
-      // Update UI
-      elements.novemberCount.textContent = newCount.toLocaleString();
-      elements.novemberPercent.textContent = `${newPercent}%`;
-    } else {
-      console.warn("November pending applications data not found.");
-    }
-  } else {
+  // Look for the one mentioning "November"
+  const novemberSection = sections.find(section => 
+    section.textContent.includes('November')
+  );
+
+  if (!novemberSection) {
     console.warn("November section not found in the fetched data.");
+    return;
+  }
+
+  console.log("November section found:", novemberSection.textContent);
+
+  const pendingText = novemberSection.textContent;
+  const matches = pendingText.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+
+  if (matches && matches.length >= 3) {
+    const newCount = parseInt(matches[1].replace(/,/g, ''));
+    const newPercent = parseFloat(matches[2]);
+
+    // Update state
+    state.pendingData[0].count = newCount;
+    state.pendingData[0].percentage = newPercent;
+
+    // Update UI
+    elements.novemberCount.textContent = newCount.toLocaleString();
+    elements.novemberPercent.textContent = `${newPercent}%`;
+
+    console.log("Updated November data:", newCount, newPercent);
+  } else {
+    console.warn("Could not extract November data.");
   }
 }
+
 
 
 function updateTodaysCompletedCases(doc) {
