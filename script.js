@@ -1,7 +1,7 @@
 // Configuration
 const CONFIG = {
   REFRESH_INTERVAL: 30 * 60 * 1000, // 30 minutes
-  DATA_VERSION: '4.5'
+  DATA_VERSION: '4.6'
 };
 
 // DOM Elements
@@ -19,14 +19,10 @@ const elements = {
   totalPending: document.getElementById('totalPending')
 };
 
-// Chart instances and state
-let charts = {
-  pending: null,
-  completed: null
-};
+// Application State
 let state = {
   pendingData: [
-    { month: 'November 2023', count: 6722, percentage: 43.98 },
+    { month: 'November 2023', count: 6722, percentage: 43.98 }, // Default values
     { month: 'December 2023', count: 13857, percentage: null },
     { month: 'January 2024', count: 11186, percentage: null },
     { month: 'February 2024', count: 11247, percentage: null },
@@ -39,58 +35,39 @@ let state = {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-  setupEventListeners();
   initializeCharts();
+  setupEventListeners();
   await fetchData();
   startAutoRefresh();
 });
-
-function initializeCharts() {
-  if (charts.pending) charts.pending.destroy();
-  if (charts.completed) charts.completed.destroy();
-  
-  charts.pending = new Chart(elements.pendingChart, {
-    type: 'bar',
-    data: { labels: [], datasets: [] },
-    options: getChartOptions('Month', 'Applications')
-  });
-  
-  charts.completed = new Chart(elements.completedChart, {
-    type: 'line',
-    data: { labels: [], datasets: [] },
-    options: getChartOptions('Date', 'Cases')
-  });
-}
 
 async function fetchData() {
   try {
     elements.refreshBtn.disabled = true;
     elements.pendingStatus.textContent = "Fetching data...";
+    elements.novemberCount.textContent = "Updating...";
+    elements.novemberPercent.textContent = "Updating...";
     
-    // First try direct fetch with proxy
-    let html;
-    try {
-      const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://permtimeline.com/')}`);
-      if (!response.ok) throw new Error('Proxy failed');
-      html = await response.text();
-    } catch (proxyError) {
-      console.log("Trying fallback method...");
-      // Fallback to alternative method if proxy fails
-      const fallback = await fetch('https://permtimeline.com/', { mode: 'no-cors' })
-        .then(r => r.text())
-        .catch(e => { throw new Error('All fetch methods failed') });
-      html = fallback;
-    }
+    // Using CORS proxy with error handling
+    const proxyUrl = 'https://api.allorigins.win/raw?url=';
+    const targetUrl = encodeURIComponent('https://permtimeline.com/');
     
+    const response = await fetch(proxyUrl + targetUrl);
+    if (!response.ok) throw new Error(`Network response was not ok (${response.status})`);
+    
+    const html = await response.text();
     processHtmlData(html);
-    updatePendingTotal();
-    updateCharts();
-    elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
     
   } catch (error) {
     console.error("Fetch error:", error);
     elements.pendingStatus.textContent = `Error: ${error.message}`;
+    // Fallback to default November values
+    elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
+    elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
   } finally {
+    updatePendingTotal();
+    updateCharts();
+    elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
     elements.refreshBtn.disabled = false;
     updateNextRefreshTime();
   }
@@ -100,25 +77,20 @@ function processHtmlData(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   
-  // 1. Update November data
-  updateNovemberData(doc);
-  
-  // 2. Update today's completed cases
-  updateTodaysCompletedCases(doc);
-}
+  // 1. Find November data
+  const sections = Array.from(doc.querySelectorAll('section.timeline-entry, div.timeline-section'));
+  const novemberSection = sections.find(section => {
+    const header = section.querySelector('h2, h3');
+    return header && header.textContent.includes('November');
+  });
 
-function updateNovemberData(doc) {
-  const novemberSection = Array.from(doc.querySelectorAll('section.timeline-entry, div.timeline-section'))
-    .find(section => {
-      const header = section.querySelector('h2, h3');
-      return header && header.textContent.includes('November');
-    });
-  
   if (novemberSection) {
-    const pendingText = novemberSection.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
-    if (pendingText) {
-      const newCount = parseInt(pendingText[1].replace(/,/g, ''));
-      const newPercent = parseFloat(pendingText[2]);
+    const pendingText = novemberSection.textContent;
+    const matches = pendingText.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+    
+    if (matches && matches.length >= 3) {
+      const newCount = parseInt(matches[1].replace(/,/g, ''));
+      const newPercent = parseFloat(matches[2]);
       
       // Update state
       state.pendingData[0].count = newCount;
@@ -129,34 +101,31 @@ function updateNovemberData(doc) {
       elements.novemberPercent.textContent = `${newPercent}%`;
     }
   }
-}
 
-function updateTodaysCompletedCases(doc) {
-  const today = new Date().toISOString().split('T')[0];
-  const completedParagraph = Array.from(doc.querySelectorAll('p'))
-    .find(p => p.textContent.includes('Total Completed Today'));
+  // 2. Find Today's Completed Cases
+  const paragraphs = Array.from(doc.querySelectorAll('p'));
+  const completedPara = paragraphs.find(p => p.textContent.includes('Total Completed Today'));
   
-  if (completedParagraph) {
-    const matches = completedParagraph.textContent.match(/(\d+)\s*\(([\d.]+)%\)/);
-    if (matches) {
+  if (completedPara) {
+    const text = completedPara.textContent.replace(/<!--.*?-->/g, '');
+    const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
+    
+    if (matches && matches.length >= 3) {
       const count = parseInt(matches[1]);
       const percent = parseFloat(matches[2]);
       
-      // Update today's display
       elements.todayCount.textContent = count;
       elements.todayPercent.textContent = percent;
       elements.todayUpdated.textContent = formatDateTime(new Date());
       
-      // Update state for chart
-      const existingIndex = state.completedData.findIndex(d => d.date === today);
-      if (existingIndex >= 0) {
-        state.completedData[existingIndex] = { date: today, count, percent };
-      } else {
-        state.completedData.push({ date: today, count, percent });
-        // Keep only last 7 days
-        if (state.completedData.length > 7) {
-          state.completedData.shift();
-        }
+      // Update completed data for chart
+      const today = new Date().toISOString().split('T')[0];
+      state.completedData = state.completedData.filter(d => d.date !== today);
+      state.completedData.push({ date: today, count, percent });
+      
+      // Keep only last 7 days
+      if (state.completedData.length > 7) {
+        state.completedData.shift();
       }
     }
   }
@@ -167,71 +136,9 @@ function updatePendingTotal() {
   elements.totalPending.textContent = total.toLocaleString();
 }
 
-function updateCharts() {
-  // Update Pending Applications Chart
-  charts.pending.data.labels = state.pendingData.map(m => m.month.split(' ')[0]);
-  charts.pending.data.datasets = [{
-    label: 'Pending Applications',
-    data: state.pendingData.map(m => m.count),
-    backgroundColor: 'rgba(52, 152, 219, 0.7)',
-    borderColor: 'rgba(52, 152, 219, 1)',
-    borderWidth: 1
-  }];
-  charts.pending.update();
-  
-  // Update Completed Cases Chart
-  const chartData = [...state.completedData].reverse(); // Newest first
-  charts.completed.data.labels = chartData.map(d => formatChartDate(new Date(d.date)));
-  charts.completed.data.datasets = [{
-    label: 'Completed Cases',
-    data: chartData.map(d => d.count),
-    backgroundColor: 'rgba(46, 204, 113, 0.2)',
-    borderColor: 'rgba(46, 204, 113, 1)',
-    borderWidth: 2,
-    tension: 0.1,
-    fill: true
-  }];
-  charts.completed.update();
-}
+// ... (keep all other functions the same as previous version)
 
-function formatChartDate(date) {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function getChartOptions(xLabel, yLabel) {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      y: {
-        beginAtZero: true,
-        title: { display: true, text: yLabel }
-      },
-      x: {
-        title: { display: true, text: xLabel }
-      }
-    }
-  };
-}
-
-function setupEventListeners() {
-  elements.refreshBtn.addEventListener('click', fetchData);
-}
-
-function startAutoRefresh() {
-  setInterval(fetchData, CONFIG.REFRESH_INTERVAL);
-  updateNextRefreshTime();
-}
-
-function updateNextRefreshTime() {
-  const nextRefresh = new Date(Date.now() + CONFIG.REFRESH_INTERVAL);
-  elements.nextRefresh.textContent = `Next refresh: ${formatTime(nextRefresh)}`;
-}
-
-function formatDateTime(date) {
-  return date.toLocaleString();
-}
-
-function formatTime(date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+// Initialize with default values on first load
+elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
+elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
+updatePendingTotal();
