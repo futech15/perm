@@ -1,7 +1,7 @@
 // Configuration
 const CONFIG = {
   REFRESH_INTERVAL: 30 * 60 * 1000, // 30 minutes
-  DATA_VERSION: '4.4'
+  DATA_VERSION: '4.5'
 };
 
 // DOM Elements
@@ -15,58 +15,49 @@ const elements = {
   todayUpdated: document.getElementById('todayUpdated'),
   nextRefresh: document.getElementById('nextRefresh'),
   pendingChart: document.getElementById('pendingChart'),
-  completedChart: document.getElementById('completedChart')
+  completedChart: document.getElementById('completedChart'),
+  totalPending: document.getElementById('totalPending')
 };
 
-// Chart instances
+// Chart instances and state
 let charts = {
   pending: null,
   completed: null
+};
+let state = {
+  pendingData: [
+    { month: 'November 2023', count: 6722, percentage: 43.98 },
+    { month: 'December 2023', count: 13857, percentage: null },
+    { month: 'January 2024', count: 11186, percentage: null },
+    { month: 'February 2024', count: 11247, percentage: null },
+    { month: 'March 2024', count: 10145, percentage: null },
+    { month: 'April 2024', count: 10622, percentage: null },
+    { month: 'May 2024', count: 12703, percentage: null }
+  ],
+  completedData: []
 };
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
-  initializeCharts(); // Initialize charts first
+  initializeCharts();
   await fetchData();
   startAutoRefresh();
 });
 
 function initializeCharts() {
-  // Destroy existing charts if they exist
   if (charts.pending) charts.pending.destroy();
   if (charts.completed) charts.completed.destroy();
   
-  // Initialize with empty data (will be updated after fetch)
   charts.pending = new Chart(elements.pendingChart, {
     type: 'bar',
-    data: {
-      labels: [],
-      datasets: [{
-        label: 'Pending Applications',
-        data: [],
-        backgroundColor: 'rgba(52, 152, 219, 0.7)',
-        borderColor: 'rgba(52, 152, 219, 1)',
-        borderWidth: 1
-      }]
-    },
+    data: { labels: [], datasets: [] },
     options: getChartOptions('Month', 'Applications')
   });
   
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: 'Completed Cases',
-        data: [],
-        backgroundColor: 'rgba(46, 204, 113, 0.2)',
-        borderColor: 'rgba(46, 204, 113, 1)',
-        borderWidth: 2,
-        tension: 0.1,
-        fill: true
-      }]
-    },
+    data: { labels: [], datasets: [] },
     options: getChartOptions('Date', 'Cases')
   });
 }
@@ -76,15 +67,24 @@ async function fetchData() {
     elements.refreshBtn.disabled = true;
     elements.pendingStatus.textContent = "Fetching data...";
     
-    const response = await fetch('https://api.allorigins.win/raw?url=' + 
-                              encodeURIComponent('https://permtimeline.com/'));
+    // First try direct fetch with proxy
+    let html;
+    try {
+      const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://permtimeline.com/')}`);
+      if (!response.ok) throw new Error('Proxy failed');
+      html = await response.text();
+    } catch (proxyError) {
+      console.log("Trying fallback method...");
+      // Fallback to alternative method if proxy fails
+      const fallback = await fetch('https://permtimeline.com/', { mode: 'no-cors' })
+        .then(r => r.text())
+        .catch(e => { throw new Error('All fetch methods failed') });
+      html = fallback;
+    }
     
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    
-    const html = await response.text();
     processHtmlData(html);
-    updateCharts(); // Update charts with new data
-    
+    updatePendingTotal();
+    updateCharts();
     elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
     
   } catch (error) {
@@ -99,70 +99,98 @@ async function fetchData() {
 function processHtmlData(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
+  
+  // 1. Update November data
   updateNovemberData(doc);
+  
+  // 2. Update today's completed cases
   updateTodaysCompletedCases(doc);
 }
 
 function updateNovemberData(doc) {
-  const sections = doc.querySelectorAll('section.timeline-entry, div.timeline-section');
+  const novemberSection = Array.from(doc.querySelectorAll('section.timeline-entry, div.timeline-section'))
+    .find(section => {
+      const header = section.querySelector('h2, h3');
+      return header && header.textContent.includes('November');
+    });
   
-  for (const section of sections) {
-    const header = section.querySelector('h2, h3');
-    if (!header || !header.textContent.includes('November')) continue;
-    
-    const pendingText = section.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+  if (novemberSection) {
+    const pendingText = novemberSection.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
     if (pendingText) {
-      elements.novemberCount.textContent = pendingText[1];
-      elements.novemberPercent.textContent = `${pendingText[2]}%`;
-      return;
+      const newCount = parseInt(pendingText[1].replace(/,/g, ''));
+      const newPercent = parseFloat(pendingText[2]);
+      
+      // Update state
+      state.pendingData[0].count = newCount;
+      state.pendingData[0].percentage = newPercent;
+      
+      // Update UI
+      elements.novemberCount.textContent = newCount.toLocaleString();
+      elements.novemberPercent.textContent = `${newPercent}%`;
     }
   }
-  
-  elements.novemberCount.textContent = '6,722';
-  elements.novemberPercent.textContent = '43.98%';
 }
 
 function updateTodaysCompletedCases(doc) {
-  const paragraphs = doc.querySelectorAll('p');
+  const today = new Date().toISOString().split('T')[0];
+  const completedParagraph = Array.from(doc.querySelectorAll('p'))
+    .find(p => p.textContent.includes('Total Completed Today'));
   
-  for (const p of paragraphs) {
-    if (p.textContent.includes('Total Completed Today')) {
-      const matches = p.textContent.match(/(\d+)\s*\(([\d.]+)%\)/);
-      if (matches) {
-        elements.todayCount.textContent = matches[1];
-        elements.todayPercent.textContent = matches[2];
-        elements.todayUpdated.textContent = formatDateTime(new Date());
+  if (completedParagraph) {
+    const matches = completedParagraph.textContent.match(/(\d+)\s*\(([\d.]+)%\)/);
+    if (matches) {
+      const count = parseInt(matches[1]);
+      const percent = parseFloat(matches[2]);
+      
+      // Update today's display
+      elements.todayCount.textContent = count;
+      elements.todayPercent.textContent = percent;
+      elements.todayUpdated.textContent = formatDateTime(new Date());
+      
+      // Update state for chart
+      const existingIndex = state.completedData.findIndex(d => d.date === today);
+      if (existingIndex >= 0) {
+        state.completedData[existingIndex] = { date: today, count, percent };
+      } else {
+        state.completedData.push({ date: today, count, percent });
+        // Keep only last 7 days
+        if (state.completedData.length > 7) {
+          state.completedData.shift();
+        }
       }
-      return;
     }
   }
-  
-  elements.todayCount.textContent = '100';
-  elements.todayPercent.textContent = '0.04';
+}
+
+function updatePendingTotal() {
+  const total = state.pendingData.reduce((sum, month) => sum + month.count, 0);
+  elements.totalPending.textContent = total.toLocaleString();
 }
 
 function updateCharts() {
   // Update Pending Applications Chart
-  charts.pending.data.labels = [
-    'Nov 2023', 'Dec 2023', 'Jan 2024', 
-    'Feb 2024', 'Mar 2024', 'Apr 2024', 'May 2024'
-  ];
-  charts.pending.data.datasets[0].data = [
-    6722, 13857, 11186, 11247, 10145, 10622, 12703
-  ];
+  charts.pending.data.labels = state.pendingData.map(m => m.month.split(' ')[0]);
+  charts.pending.data.datasets = [{
+    label: 'Pending Applications',
+    data: state.pendingData.map(m => m.count),
+    backgroundColor: 'rgba(52, 152, 219, 0.7)',
+    borderColor: 'rgba(52, 152, 219, 1)',
+    borderWidth: 1
+  }];
   charts.pending.update();
   
-  // Update Completed Cases Chart (last 7 days)
-  const today = new Date();
-  const dates = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(today.getDate() - i);
-    dates.push(formatChartDate(date));
-  }
-  
-  charts.completed.data.labels = dates;
-  charts.completed.data.datasets[0].data = [597, 223, 89, 546, 630, 662, 509];
+  // Update Completed Cases Chart
+  const chartData = [...state.completedData].reverse(); // Newest first
+  charts.completed.data.labels = chartData.map(d => formatChartDate(new Date(d.date)));
+  charts.completed.data.datasets = [{
+    label: 'Completed Cases',
+    data: chartData.map(d => d.count),
+    backgroundColor: 'rgba(46, 204, 113, 0.2)',
+    borderColor: 'rgba(46, 204, 113, 1)',
+    borderWidth: 2,
+    tension: 0.1,
+    fill: true
+  }];
   charts.completed.update();
 }
 
@@ -177,16 +205,10 @@ function getChartOptions(xLabel, yLabel) {
     scales: {
       y: {
         beginAtZero: true,
-        title: {
-          display: true,
-          text: yLabel
-        }
+        title: { display: true, text: yLabel }
       },
       x: {
-        title: {
-          display: true,
-          text: xLabel
-        }
+        title: { display: true, text: xLabel }
       }
     }
   };
