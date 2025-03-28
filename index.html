@@ -28,13 +28,11 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- November row will be updated dynamically -->
                         <tr id="novemberRow">
                             <td>November 2023</td>
                             <td id="novemberCount">6,722</td>
                             <td id="novemberPercent">43.98%</td>
                         </tr>
-                        <!-- Static months -->
                         <tr>
                             <td>December 2023</td>
                             <td>13,857</td>
@@ -77,6 +75,28 @@
             </div>
             <div class="chart-container">
                 <canvas id="pendingChart"></canvas>
+            </div>
+            
+            <!-- New Expected Date Calculation Section -->
+            <div class="expected-date-section">
+                <h3>Expected Completion Date Calculator</h3>
+                <div class="calculator-controls">
+                    <label for="monthSelect">Select Month:</label>
+                    <select id="monthSelect">
+                        <option value="December 2023">December 2023</option>
+                        <option value="January 2024">January 2024</option>
+                        <option value="February 2024">February 2024</option>
+                        <option value="March 2024">March 2024</option>
+                        <option value="April 2024">April 2024</option>
+                        <option value="May 2024">May 2024</option>
+                    </select>
+                    <button id="calculateBtn">Calculate</button>
+                </div>
+                <div class="calculator-results">
+                    <p>Selected Pending Applications: <span id="selectedPending">0</span></p>
+                    <p>7-Day Completion Rate: <span id="completionRate">0</span> cases/week</p>
+                    <p>Expected Completion Date: <span id="expectedDate">Not calculated</span></p>
+                </div>
             </div>
         </div>
         
