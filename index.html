@@ -3,21 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Green Card Timeline Tracker</title>
+    <title>Perm Timeline Tracker</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Green Card Timeline Tracker</h1>
+        <h1>Perm Timeline Tracker</h1>
         <p>Automatically tracking data from <a href="https://permtimeline.com" target="_blank">permtimeline.com</a></p>
         
         <div class="data-section">
             <h2>Pending Applications</h2>
-            <div class="controls">
-                <button id="refreshBtn">Refresh Data</button>
-                <span id="status"></span>
-            </div>
             <div class="table-container">
                 <table id="pendingTable">
                     <thead>
@@ -67,7 +63,7 @@
                     <tfoot>
                         <tr>
                             <th>Total</th>
-                            <th id="totalPending">76,482</th>
+                            <th>76,482</th>
                             <th></th>
                         </tr>
                     </tfoot>
@@ -80,6 +76,14 @@
         
         <div class="data-section">
             <h2>Daily Completed Cases</h2>
+            <div class="today-data">
+                <h3>Today's Completed Cases</h3>
+                <div class="today-stats">
+                    <p>Total Completed Today: <span id="todayCount">0</span> (<span id="todayPercent">0.00</span>%)</p>
+                    <p>Last Updated: <span id="todayUpdated">Never</span></p>
+                    <button id="refreshTodayBtn">Refresh Now</button>
+                </div>
+            </div>
             <div class="table-container">
                 <table id="completedTable">
                     <thead>
@@ -89,11 +93,47 @@
                             <th>Percentage</th>
                         </tr>
                     </thead>
-                    <tbody></tbody>
+                    <tbody>
+                        <tr>
+                            <td>March 21</td>
+                            <td>597</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>March 22</td>
+                            <td>223</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>March 23</td>
+                            <td>89</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>March 24</td>
+                            <td>546</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>March 25</td>
+                            <td>630</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>March 26</td>
+                            <td>662</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>March 27</td>
+                            <td>509</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
                     <tfoot>
                         <tr>
-                            <th>Total</th>
-                            <th id="totalCompleted">0</th>
+                            <th>Total (7 Days)</th>
+                            <th id="weekTotal">3,256</th>
                             <th></th>
                         </tr>
                     </tfoot>
@@ -105,7 +145,6 @@
         </div>
         
         <div class="last-updated">
-            <p>Last updated: <span id="lastUpdated">Never</span></p>
             <p>Next auto-refresh: <span id="nextRefresh"></span></p>
         </div>
     </div>
