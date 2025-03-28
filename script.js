@@ -1,7 +1,8 @@
 // Configuration
 const CONFIG = {
   REFRESH_INTERVAL: 30 * 60 * 1000, // 30 minutes
-  DATA_VERSION: '4.8'
+  DATA_VERSION: '5.0',
+  HISTORY_DAYS: 7 // Number of days to show in completed cases chart
 };
 
 // DOM Elements
@@ -30,7 +31,16 @@ let state = {
     { month: 'April 2024', count: 10622, percentage: null },
     { month: 'May 2024', count: 12703, percentage: null }
   ],
-  completedData: []
+  completedData: [
+    // Sample initial data for the last 7 days
+    { date: '2024-03-21', count: 597, percentage: null },
+    { date: '2024-03-22', count: 223, percentage: null },
+    { date: '2024-03-23', count: 89, percentage: null },
+    { date: '2024-03-24', count: 546, percentage: null },
+    { date: '2024-03-25', count: 630, percentage: null },
+    { date: '2024-03-26', count: 662, percentage: null },
+    { date: '2024-03-27', count: 509, percentage: null }
+  ]
 };
 
 // Chart instances
@@ -68,23 +78,60 @@ function initializeCharts() {
     options: getChartOptions('Month', 'Applications')
   });
 
-  // Completed Cases Chart
+  // Enhanced Completed Cases Chart
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
     data: {
-      labels: [],
+      labels: getLast7DaysLabels(),
       datasets: [{
-        label: 'Completed Cases',
-        data: [],
+        label: 'Daily Completed Cases',
+        data: getLast7DaysData(),
         backgroundColor: 'rgba(46, 204, 113, 0.2)',
         borderColor: 'rgba(46, 204, 113, 1)',
         borderWidth: 2,
         tension: 0.1,
-        fill: true
+        fill: true,
+        pointBackgroundColor: 'rgba(46, 204, 113, 1)',
+        pointRadius: 5,
+        pointHoverRadius: 7
       }]
     },
-    options: getChartOptions('Date', 'Cases')
+    options: {
+      ...getChartOptions('Date', 'Cases'),
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `${context.dataset.label}: ${context.raw}`;
+            }
+          }
+        }
+      }
+    }
   });
+}
+
+// Helper functions for chart data
+function getLast7DaysLabels() {
+  const labels = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    labels.push(formatChartDate(date));
+  }
+  return labels;
+}
+
+function getLast7DaysData() {
+  const data = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayData = state.completedData.find(d => d.date === dateStr);
+    data.push(dayData ? dayData.count : 0);
+  }
+  return data;
 }
 
 async function fetchData() {
@@ -195,12 +242,15 @@ function updateTodaysCompletedCases(doc) {
         elements.todayUpdated.textContent = formatDateTime(new Date());
         
         // Update completed data for chart
-        state.completedData = state.completedData.filter(d => d.date !== today);
-        state.completedData.push({ date: today, count, percent });
-        
-        // Keep only last 7 days
-        if (state.completedData.length > 7) {
-          state.completedData.shift();
+        const existingIndex = state.completedData.findIndex(d => d.date === today);
+        if (existingIndex >= 0) {
+          state.completedData[existingIndex] = { date: today, count, percent };
+        } else {
+          state.completedData.push({ date: today, count, percent });
+          // Keep only last 7 days
+          if (state.completedData.length > CONFIG.HISTORY_DAYS) {
+            state.completedData.shift();
+          }
         }
         return;
       }
@@ -224,9 +274,8 @@ function updateCharts() {
   charts.pending.update();
   
   // Update Completed Cases Chart
-  const chartData = [...state.completedData].reverse();
-  charts.completed.data.labels = chartData.map(d => formatChartDate(new Date(d.date)));
-  charts.completed.data.datasets[0].data = chartData.map(d => d.count);
+  charts.completed.data.labels = getLast7DaysLabels();
+  charts.completed.data.datasets[0].data = getLast7DaysData();
   charts.completed.update();
 }
 
