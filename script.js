@@ -7,6 +7,17 @@ const CONFIG = {
   BACKUP_KEYS: ['gcTimelineData', 'gcTimelineData_v1', 'gcTimelineData_backup'] // Possible storage keys
 };
 
+// Static pending applications data
+const STATIC_PENDING_DATA = [
+  { month: 'November 2023', count: 6722, percentage: 43.98 },
+  { month: 'December 2023', count: 13857, percentage: null },
+  { month: 'January 2024', count: 11186, percentage: null },
+  { month: 'February 2024', count: 11247, percentage: null },
+  { month: 'March 2024', count: 10145, percentage: null },
+  { month: 'April 2024', count: 10622, percentage: null },
+  { month: 'May 2024', count: 12703, percentage: null }
+];
+
 // DOM Elements
 const elements = {
   pendingTableBody: document.querySelector('#pendingTable tbody'),
@@ -27,7 +38,7 @@ let charts = {
 
 // Application State
 let state = {
-  pending: [],
+  pending: [...STATIC_PENDING_DATA],
   completed: [],
   lastUpdated: null
 };
@@ -43,13 +54,11 @@ async function initializeApp() {
     // Set up UI event listeners
     setupEventListeners();
     
-    // Render initial data if available
-    if (state.pending.length > 0 || state.completed.length > 0) {
-      renderAllData();
-    }
+    // Render initial data
+    renderAllData();
     
-    // Fetch new data and start auto-refresh
-    await fetchData();
+    // Fetch new completed cases data and start auto-refresh
+    await fetchCompletedData();
     startAutoRefresh();
     
   } catch (error) {
@@ -61,7 +70,7 @@ async function initializeApp() {
 // Data Management Functions
 function recoverData() {
   try {
-    // Check all possible storage keys
+    // Check all possible storage keys for completed cases data
     for (const key of CONFIG.BACKUP_KEYS) {
       const storedData = localStorage.getItem(key);
       if (storedData) {
@@ -69,13 +78,11 @@ function recoverData() {
         
         // Migrate from old versions if needed
         if (!parsedData.version || parsedData.version === 'v1') {
-          state = {
-            pending: Array.isArray(parsedData.pending) ? parsedData.pending : [],
-            completed: Array.isArray(parsedData.completed) ? parsedData.completed : [],
-            lastUpdated: parsedData.lastUpdated || null
-          };
+          state.completed = Array.isArray(parsedData.completed) ? parsedData.completed : [];
+          state.lastUpdated = parsedData.lastUpdated || null;
         } else {
-          state = parsedData;
+          state.completed = parsedData.completed || [];
+          state.lastUpdated = parsedData.lastUpdated || null;
         }
         
         // Create backup of recovered data
@@ -85,8 +92,8 @@ function recoverData() {
     }
   } catch (error) {
     console.error('Data recovery error:', error);
-    // Initialize empty state if recovery fails
-    state = { pending: [], completed: [], lastUpdated: null };
+    // Initialize empty completed cases if recovery fails
+    state.completed = [];
   }
 }
 
@@ -95,10 +102,11 @@ function saveData() {
     // Create backup before saving
     createBackup();
     
-    // Prepare data for storage
+    // Prepare data for storage (only save completed cases as pending is static)
     const dataToSave = {
-      ...state,
+      completed: state.completed,
       version: CONFIG.DATA_VERSION,
+      lastUpdated: state.lastUpdated,
       savedAt: new Date().toISOString()
     };
     
@@ -110,18 +118,23 @@ function saveData() {
 
 function createBackup() {
   try {
-    localStorage.setItem('gcTimelineData_backup', JSON.stringify(state));
+    const backupData = {
+      completed: state.completed,
+      lastUpdated: state.lastUpdated,
+      version: CONFIG.DATA_VERSION
+    };
+    localStorage.setItem('gcTimelineData_backup', JSON.stringify(backupData));
   } catch (error) {
     console.error('Backup creation failed:', error);
   }
 }
 
 // Data Fetching and Processing
-async function fetchData() {
+async function fetchCompletedData() {
   try {
     // Update UI state
     elements.refreshBtn.disabled = true;
-    elements.status.textContent = 'Fetching latest data...';
+    elements.status.textContent = 'Fetching latest completed cases...';
     
     // Fetch data through proxy
     const response = await fetch(CONFIG.PROXY_URL);
@@ -130,15 +143,16 @@ async function fetchData() {
     const proxyData = await response.json();
     if (!proxyData.contents) throw new Error('No content received from proxy');
     
-    // Parse and process the HTML
-    const processedData = processHtmlData(proxyData.contents);
+    // Parse and process the HTML for completed cases
+    const completedData = processCompletedData(proxyData.contents);
     
     // Update application state
-    updateApplicationState(processedData);
+    updateCompletedState(completedData);
     
     // Save and render
     saveData();
-    renderAllData();
+    renderCompletedData();
+    renderCompletedChart();
     
     // Update status
     elements.status.textContent = 'Data updated successfully!';
@@ -154,34 +168,9 @@ async function fetchData() {
   }
 }
 
-function processHtmlData(htmlContent) {
+function processCompletedData(htmlContent) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlContent, 'text/html');
-  
-  // Extract pending applications
-  const pendingData = [];
-  const monthSections = doc.querySelectorAll('div.timeline-section, section.timeline-entry');
-  
-  monthSections.forEach(section => {
-    const monthHeader = section.querySelector('h2, h3');
-    if (!monthHeader) return;
-    
-    const monthText = monthHeader.textContent.trim();
-    if (!isValidMonth(monthText)) return;
-    
-    const pendingElement = section.querySelector('p:contains("Pending Applications")') || 
-                          section.querySelector('p.font-medium');
-    if (!pendingElement) return;
-    
-    const matches = pendingElement.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
-    if (!matches || matches.length < 3) return;
-    
-    pendingData.push({
-      month: cleanMonthText(monthText),
-      count: parseInt(matches[1].replace(/,/g, '')),
-      percentage: parseFloat(matches[2])
-    });
-  });
   
   // Extract completed cases
   let completedCount = 0;
@@ -200,20 +189,14 @@ function processHtmlData(htmlContent) {
   }
   
   return {
-    pending: pendingData,
-    completed: {
-      count: completedCount,
-      percentage: completedPercentage
-    }
+    count: completedCount,
+    percentage: completedPercentage
   };
 }
 
-function updateApplicationState(newData) {
-  // Update pending applications
-  state.pending = newData.pending;
-  
+function updateCompletedState(newData) {
   // Add today's completed cases if valid
-  if (newData.completed.count > 0) {
+  if (newData.count > 0) {
     const today = new Date().toISOString().split('T')[0];
     const existingIndex = state.completed.findIndex(entry => entry.date === today);
     
@@ -221,15 +204,15 @@ function updateApplicationState(newData) {
       // Update existing entry
       state.completed[existingIndex] = {
         date: today,
-        count: newData.completed.count,
-        percentage: newData.completed.percentage
+        count: newData.count,
+        percentage: newData.percentage
       };
     } else {
       // Add new entry
       state.completed.unshift({
         date: today,
-        count: newData.completed.count,
-        percentage: newData.completed.percentage
+        count: newData.count,
+        percentage: newData.percentage
       });
       
       // Trim to max allowed days
@@ -259,7 +242,7 @@ function renderPendingData() {
     row.innerHTML = `
       <td>${item.month}</td>
       <td>${item.count.toLocaleString()}</td>
-      <td>${item.percentage}%</td>
+      <td>${item.percentage ? item.percentage + '%' : ''}</td>
     `;
     elements.pendingTableBody.appendChild(row);
     totalPending += item.count;
@@ -348,7 +331,7 @@ function renderCompletedChart() {
 
 // Utility Functions
 function setupEventListeners() {
-  elements.refreshBtn.addEventListener('click', fetchData);
+  elements.refreshBtn.addEventListener('click', fetchCompletedData);
   
   // Add window event listeners
   window.addEventListener('beforeunload', createBackup);
@@ -400,12 +383,4 @@ function getChartOptions(xLabel, yLabel) {
       }
     }
   };
-}
-
-function isValidMonth(text) {
-  return /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i.test(text);
-}
-
-function cleanMonthText(text) {
-  return text.replace(':', '').trim();
 }
