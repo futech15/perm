@@ -28,7 +28,7 @@ const elements = {
   weekTotal: document.getElementById('weekTotal')
 };
 
-// Application State with your specified completed case numbers
+// Application State with your historical data and today's dynamic data
 let state = {
   pendingData: [
     { month: 'November 2023', count: 6722, percentage: 43.98 },
@@ -47,7 +47,8 @@ let state = {
     { date: '2024-03-25', count: 630, percentage: null },
     { date: '2024-03-26', count: 662, percentage: null },
     { date: '2024-03-27', count: 509, percentage: null }
-  ]
+  ],
+  todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
 
 // Chart instances
@@ -63,7 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchData();
   startAutoRefresh();
   scheduleDailyUpdate();
-  updateUI(); // Initialize UI with your specified values
+  updateUI();
 });
 
 function initializeCharts() {
@@ -86,7 +87,7 @@ function initializeCharts() {
     options: getChartOptions('Month', 'Applications')
   });
 
-  // Completed Cases Chart
+  // Completed Cases Chart (shows historical data + today)
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
     data: {
@@ -123,6 +124,9 @@ function updateUI() {
   // Initialize with your specified values
   elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
   elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
+  elements.todayCount.textContent = state.todayCompleted.count;
+  elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
+  elements.todayUpdated.textContent = formatDateTime(new Date());
   updatePendingTotal();
   updateCompletedTable();
   updateCharts();
@@ -130,14 +134,39 @@ function updateUI() {
 
 // Helper functions for chart data
 function getLast7DaysLabels() {
-  return state.completedData.map(item => {
-    const date = new Date(item.date);
-    return formatChartDate(date);
-  });
+  const today = new Date();
+  const dates = [];
+  
+  // Add historical dates (6 days ago to yesterday)
+  for (let i = 6; i >= 1; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    dates.push(formatChartDate(date));
+  }
+  
+  // Add today's date
+  dates.push(formatChartDate(today));
+  
+  return dates;
 }
 
 function getLast7DaysData() {
-  return state.completedData.map(item => item.count);
+  const today = new Date().toISOString().split('T')[0];
+  const data = [];
+  
+  // Add historical data (6 days ago to yesterday)
+  for (let i = 6; i >= 1; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayData = state.completedData.find(d => d.date === dateStr);
+    data.push(dayData ? dayData.count : 0);
+  }
+  
+  // Add today's count
+  data.push(state.todayCompleted.count);
+  
+  return data;
 }
 
 async function fetchData() {
@@ -159,7 +188,6 @@ async function fetchData() {
   } catch (error) {
     console.error("Fetch error:", error);
     elements.pendingStatus.textContent = `Error: ${error.message}`;
-    // Keep your specified values on error
     elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
     elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
   } finally {
@@ -175,7 +203,7 @@ function processHtmlData(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   updateNovemberData(doc);
-  // Skip updating completed cases to preserve your specified values
+  updateTodaysCompletedCases(doc); // Only updates today's count
 }
 
 function updateNovemberData(doc) {
@@ -213,14 +241,44 @@ function updateNovemberData(doc) {
   elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
 }
 
+function updateTodaysCompletedCases(doc) {
+  const today = new Date().toISOString().split('T')[0];
+  const paragraphs = Array.from(doc.querySelectorAll('p'));
+  
+  for (const p of paragraphs) {
+    if (p.textContent.includes('Total Completed Today')) {
+      const text = p.textContent.replace(/<!--.*?-->/g, '');
+      const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
+      
+      if (matches && matches.length >= 3) {
+        state.todayCompleted.count = parseInt(matches[1]);
+        state.todayCompleted.percentage = parseFloat(matches[2]);
+        
+        elements.todayCount.textContent = state.todayCompleted.count;
+        elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
+        elements.todayUpdated.textContent = formatDateTime(new Date());
+        updateCharts();
+        return;
+      }
+    }
+  }
+  
+  console.warn("Today's completed cases not found");
+  state.todayCompleted.count = 0;
+  state.todayCompleted.percentage = 0;
+  elements.todayCount.textContent = "0";
+  elements.todayPercent.textContent = "0.00";
+}
+
 function updateCompletedTable() {
   const tableBody = document.querySelector('#completedTable tbody');
   tableBody.innerHTML = '';
 
-  const displayData = [...state.completedData].reverse();
+  const today = new Date().toISOString().split('T')[0];
   let weekTotal = 0;
 
-  displayData.forEach(day => {
+  // Add historical data
+  state.completedData.forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${formatTableDate(day.date)}</td>
@@ -230,6 +288,18 @@ function updateCompletedTable() {
     tableBody.appendChild(row);
     weekTotal += day.count;
   });
+
+  // Add today's data if it exists
+  if (state.todayCompleted.count > 0) {
+    const todayRow = document.createElement('tr');
+    todayRow.innerHTML = `
+      <td>Today</td>
+      <td>${state.todayCompleted.count.toLocaleString()}</td>
+      <td>${state.todayCompleted.percentage.toFixed(2)}%</td>
+    `;
+    tableBody.insertBefore(todayRow, tableBody.firstChild);
+    weekTotal += state.todayCompleted.count;
+  }
 
   elements.weekTotal.textContent = weekTotal.toLocaleString();
 }
@@ -288,9 +358,36 @@ function scheduleDailyUpdate() {
   elements.nextArchive.textContent = updateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   setTimeout(() => {
-    // Skip archiving to preserve your specified values
+    archiveTodaysData();
     scheduleDailyUpdate();
   }, timeUntilUpdate);
+}
+
+function archiveTodaysData() {
+  if (state.todayCompleted.count > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Add today's data to history
+    state.completedData.push({
+      date: today,
+      count: state.todayCompleted.count,
+      percentage: state.todayCompleted.percentage
+    });
+    
+    // Remove oldest if needed
+    if (state.completedData.length > CONFIG.HISTORY_DAYS) {
+      state.completedData.shift();
+    }
+    
+    // Reset today's count
+    state.todayCompleted.count = 0;
+    state.todayCompleted.percentage = 0;
+    elements.todayCount.textContent = "0";
+    elements.todayPercent.textContent = "0.00";
+    
+    updateCompletedTable();
+    updateCharts();
+  }
 }
 
 function updatePendingTotal() {
