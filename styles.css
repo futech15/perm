@@ -125,3 +125,28 @@ a:hover {
         padding: 8px 10px;
     }
 }
+
+/* Add these to your existing CSS */
+
+/* Highlight for calculated date */
+#expectedDate {
+    color: #4CAF50;
+    font-size: 1.2em;
+    font-weight: bold;
+    background-color: #f8f9fa;
+    padding: 5px 10px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+/* Error state */
+.calculator-error {
+    color: #f44336;
+    font-weight: bold;
+}
+
+/* Table styling for empty days */
+#completedTable tr td:nth-child(2) {
+    color: #666;
+    font-style: italic;
+}
