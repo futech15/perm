@@ -27,7 +27,7 @@ const elements = {
   expectedDate: document.getElementById('expectedDate')
 };
 
-// Application State
+// Application State with restored 7-day data
 let state = {
   pendingData: [
     { month: 'November 2023', count: 6722, percentage: 43.98 },
@@ -38,7 +38,15 @@ let state = {
     { month: 'April 2024', count: 10622, percentage: null },
     { month: 'May 2024', count: 12703, percentage: null }
   ],
-  completedData: []
+  completedData: [
+    { date: '2024-03-21', count: 597, percentage: null },
+    { date: '2024-03-22', count: 223, percentage: null },
+    { date: '2024-03-23', count: 89, percentage: null },
+    { date: '2024-03-24', count: 546, percentage: null },
+    { date: '2024-03-25', count: 630, percentage: null },
+    { date: '2024-03-26', count: 662, percentage: null },
+    { date: '2024-03-27', count: 509, percentage: null }
+  ]
 };
 
 // Chart instances
@@ -263,40 +271,84 @@ function updateCompletedTable() {
 }
 
 function calculateExpectedDate() {
-  const selectedMonth = elements.monthSelect.value;
-  const weekTotal = parseInt(elements.weekTotal.textContent.replace(/,/g, '')) || 1;
-  
-  // Find the index of the selected month
-  const monthIndex = state.pendingData.findIndex(m => m.month === selectedMonth);
-  
-  if (monthIndex === -1) {
-    elements.expectedDate.textContent = "Invalid selection";
-    return;
+  try {
+    const selectedMonth = elements.monthSelect.value;
+    const weekTotal = parseInt(elements.weekTotal.textContent.replace(/,/g, '')) || 1;
+    
+    // Find the index of the selected month
+    const monthIndex = state.pendingData.findIndex(m => m.month === selectedMonth);
+    
+    if (monthIndex === -1) {
+      throw new Error("Selected month not found");
+    }
+    
+    // Sum from November to selected month
+    let sum = 0;
+    for (let i = 0; i <= monthIndex; i++) {
+      sum += state.pendingData[i].count;
+    }
+    
+    // Update UI with selected pending count
+    elements.selectedPending.textContent = sum.toLocaleString();
+    
+    // Calculate weeks needed (sum / weekly completion rate)
+    const weeksNeeded = sum / weekTotal;
+    elements.completionRate.textContent = weekTotal.toLocaleString();
+    
+    // Calculate expected date (today + weeks needed)
+    const today = new Date();
+    const expectedDate = new Date(today);
+    expectedDate.setDate(today.getDate() + Math.ceil(weeksNeeded * 7));
+    
+    // Format the expected date nicely
+    elements.expectedDate.textContent = expectedDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+  } catch (error) {
+    console.error("Calculation error:", error);
+    elements.expectedDate.textContent = "Error in calculation";
+    elements.selectedPending.textContent = "0";
+    elements.completionRate.textContent = "0";
   }
-  
-  // Sum from November to selected month
-  let sum = 0;
-  for (let i = 0; i <= monthIndex; i++) {
-    sum += state.pendingData[i].count;
-  }
-  
-  elements.selectedPending.textContent = sum.toLocaleString();
-  
-  // Calculate weeks needed (sum / weekly completion rate)
-  const weeksNeeded = sum / weekTotal;
-  elements.completionRate.textContent = weekTotal.toLocaleString();
-  
-  // Calculate expected date
+}
+
+// Modified updateCompletedTable to ensure it shows all 7 days
+function updateCompletedTable() {
+  const tableBody = document.querySelector('#completedTable tbody');
+  tableBody.innerHTML = '';
+
+  // Ensure we always show 7 days, filling missing days with 0
+  const displayData = [];
   const today = new Date();
-  const expectedDate = new Date(today);
-  expectedDate.setDate(today.getDate() + Math.ceil(weeksNeeded * 7));
   
-  elements.expectedDate.textContent = expectedDate.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayData = state.completedData.find(d => d.date === dateStr) || 
+                   { date: dateStr, count: 0, percentage: null };
+    displayData.push(dayData);
+  }
+
+  // Calculate week total
+  let weekTotal = 0;
+  
+  displayData.forEach(day => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${formatTableDate(day.date)}</td>
+      <td>${day.count.toLocaleString()}</td>
+      <td>${day.percentage ? day.percentage.toFixed(2) + '%' : ''}</td>
+    `;
+    tableBody.appendChild(row);
+    weekTotal += day.count;
   });
+
+  elements.weekTotal.textContent = weekTotal.toLocaleString();
 }
 
 function scheduleDailyUpdate() {
