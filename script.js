@@ -28,7 +28,7 @@ const elements = {
   weekTotal: document.getElementById('weekTotal')
 };
 
-// Application State with your historical data and today's dynamic data
+// Application State
 let state = {
   pendingData: [
     { month: 'November 2023', count: 6722, percentage: 43.98 },
@@ -48,7 +48,7 @@ let state = {
     { date: '2024-03-26', count: 662, percentage: null },
     { date: '2024-03-27', count: 509, percentage: null }
   ],
-  todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
+  todayCompleted: { count: 0, percentage: 0, updated: null }
 };
 
 // Chart instances
@@ -87,7 +87,7 @@ function initializeCharts() {
     options: getChartOptions('Month', 'Applications')
   });
 
-  // Completed Cases Chart (shows historical data + today)
+  // Completed Cases Chart
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
     data: {
@@ -121,52 +121,27 @@ function initializeCharts() {
 }
 
 function updateUI() {
-  // Initialize with your specified values
   elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
   elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
   elements.todayCount.textContent = state.todayCompleted.count;
   elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
-  elements.todayUpdated.textContent = formatDateTime(new Date());
+  elements.todayUpdated.textContent = state.todayCompleted.updated ? formatDateTime(state.todayCompleted.updated) : 'Not updated yet';
   updatePendingTotal();
   updateCompletedTable();
   updateCharts();
 }
 
-// Helper functions for chart data
 function getLast7DaysLabels() {
-  const today = new Date();
-  const dates = [];
-  
-  // Add historical dates (6 days ago to yesterday)
-  for (let i = 6; i >= 1; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    dates.push(formatChartDate(date));
-  }
-  
-  // Add today's date
-  dates.push(formatChartDate(today));
-  
-  return dates;
+  // Always show March 21-27 in the chart
+  return [
+    'Mar 21', 'Mar 22', 'Mar 23', 'Mar 24', 
+    'Mar 25', 'Mar 26', 'Mar 27'
+  ];
 }
 
 function getLast7DaysData() {
-  const today = new Date().toISOString().split('T')[0];
-  const data = [];
-  
-  // Add historical data (6 days ago to yesterday)
-  for (let i = 6; i >= 1; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayData = state.completedData.find(d => d.date === dateStr);
-    data.push(dayData ? dayData.count : 0);
-  }
-  
-  // Add today's count
-  data.push(state.todayCompleted.count);
-  
-  return data;
+  // Return data for March 21-27 from completedData
+  return state.completedData.map(day => day.count);
 }
 
 async function fetchData() {
@@ -203,7 +178,7 @@ function processHtmlData(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   updateNovemberData(doc);
-  updateTodaysCompletedCases(doc); // Only updates today's count
+  updateTodaysCompletedCases(doc);
 }
 
 function updateNovemberData(doc) {
@@ -242,7 +217,6 @@ function updateNovemberData(doc) {
 }
 
 function updateTodaysCompletedCases(doc) {
-  const today = new Date().toISOString().split('T')[0];
   const paragraphs = Array.from(doc.querySelectorAll('p'));
   
   for (const p of paragraphs) {
@@ -251,13 +225,15 @@ function updateTodaysCompletedCases(doc) {
       const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
       
       if (matches && matches.length >= 3) {
-        state.todayCompleted.count = parseInt(matches[1]);
-        state.todayCompleted.percentage = parseFloat(matches[2]);
+        state.todayCompleted = {
+          count: parseInt(matches[1]),
+          percentage: parseFloat(matches[2]),
+          updated: new Date()
+        };
         
         elements.todayCount.textContent = state.todayCompleted.count;
         elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
-        elements.todayUpdated.textContent = formatDateTime(new Date());
-        updateCharts();
+        elements.todayUpdated.textContent = formatDateTime(state.todayCompleted.updated);
         return;
       }
     }
@@ -274,10 +250,9 @@ function updateCompletedTable() {
   const tableBody = document.querySelector('#completedTable tbody');
   tableBody.innerHTML = '';
 
-  const today = new Date().toISOString().split('T')[0];
   let weekTotal = 0;
 
-  // Add historical data
+  // Show March 21-27 in the table
   state.completedData.forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -289,8 +264,18 @@ function updateCompletedTable() {
     weekTotal += day.count;
   });
 
-  // Add today's data if it exists
-  if (state.todayCompleted.count > 0) {
+  // Only show today's count if it's after the archive time
+  const now = new Date();
+  const archiveTime = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    CONFIG.DAILY_UPDATE_HOUR,
+    CONFIG.DAILY_UPDATE_MINUTE,
+    0
+  );
+
+  if (now > archiveTime && state.todayCompleted.count > 0) {
     const todayRow = document.createElement('tr');
     todayRow.innerHTML = `
       <td>Today</td>
@@ -365,16 +350,21 @@ function scheduleDailyUpdate() {
 
 function archiveTodaysData() {
   if (state.todayCompleted.count > 0) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
     
-    // Add today's data to history
+    // Add today's data to history (as March 28)
+    const newDate = new Date(today);
+    newDate.setDate(28); // Force March 28
+    const newDateStr = newDate.toISOString().split('T')[0];
+    
     state.completedData.push({
-      date: today,
+      date: newDateStr,
       count: state.todayCompleted.count,
       percentage: state.todayCompleted.percentage
     });
     
-    // Remove oldest if needed
+    // Remove oldest date (March 21)
     if (state.completedData.length > CONFIG.HISTORY_DAYS) {
       state.completedData.shift();
     }
