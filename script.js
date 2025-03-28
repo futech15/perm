@@ -88,44 +88,49 @@ function initializeCharts() {
 }
 
 async function fetchData() {
-  try {
-    elements.refreshBtn.disabled = true;
-    elements.pendingStatus.textContent = "Fetching data...";
-    elements.novemberCount.textContent = "Updating...";
-    elements.novemberPercent.textContent = "Updating...";
+    try {
+        elements.refreshBtn.disabled = true;
+        elements.pendingStatus.textContent = "Fetching data...";
+        elements.novemberCount.textContent = "Updating...";
+        elements.novemberPercent.textContent = "Updating...";
 
-    // Try to fetch data with retry logic
-    const html = await fetchWithRetry('https://permtimeline.com/', 2);
-    processHtmlData(html);
-    
-  } catch (error) {
-    console.error("Fetch error:", error);
-    elements.pendingStatus.textContent = `Error: ${error.message}`;
-    // Fallback to default November values
-    elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
-    elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
-  } finally {
-    updatePendingTotal();
-    updateCharts();
-    elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
-    elements.refreshBtn.disabled = false;
-    updateNextRefreshTime();
-  }
+        // Fetch updated HTML data
+        const html = await fetchWithRetry('https://permtimeline.com/', 3); // Increased retry attempts
+
+        // Process and update UI immediately
+        if (html) {
+            processHtmlData(html);
+        } else {
+            throw new Error("No data received");
+        }
+    } catch (error) {
+        console.error("Fetch error:", error);
+        elements.pendingStatus.textContent = `Error: ${error.message}`;
+    } finally {
+        updatePendingTotal();
+        updateCharts();
+        elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
+        elements.refreshBtn.disabled = false;
+        updateNextRefreshTime();
+    }
 }
+
 
 async function fetchWithRetry(url, retries) {
-  const proxyUrl = 'https://api.allorigins.win/raw?url=';
-  try {
-    const response = await fetch(proxyUrl + encodeURIComponent(url));
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-    return await response.text();
-  } catch (error) {
-    if (retries <= 0) throw error;
-    console.log(`Retrying... (${retries} attempts left)`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return fetchWithRetry(url, retries - 1);
-  }
+    const proxyUrl = 'https://api.allorigins.win/raw?url='; // Consider replacing with a better proxy
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await fetch(proxyUrl + encodeURIComponent(url), { cache: "no-store" });
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            return await response.text();
+        } catch (error) {
+            console.warn(`Fetch attempt ${attempt} failed: ${error.message}`);
+            if (attempt === retries) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retrying
+        }
+    }
 }
+
 
 function processHtmlData(html) {
   const parser = new DOMParser();
@@ -237,8 +242,12 @@ function getChartOptions(xLabel, yLabel) {
 }
 
 function setupEventListeners() {
-  elements.refreshBtn.addEventListener('click', fetchData);
+    elements.refreshBtn.addEventListener('click', async () => {
+        console.log("Refresh button clicked.");
+        await fetchData(); // Ensure this updates immediately
+    });
 }
+
 
 function startAutoRefresh() {
   setInterval(fetchData, CONFIG.REFRESH_INTERVAL);
