@@ -94,15 +94,17 @@ async function fetchData() {
         elements.novemberCount.textContent = "Updating...";
         elements.novemberPercent.textContent = "Updating...";
 
-        // Fetch updated HTML data
-        const html = await fetchWithRetry('https://permtimeline.com/', 3); // Increased retry attempts
+        // Use a CORS proxy to fetch data
+        const proxyUrl = "https://api.allorigins.win/get?url=";
+        const targetUrl = encodeURIComponent("https://permtimeline.com/");
+        const response = await fetch(`${proxyUrl}${targetUrl}`);
 
-        // Process and update UI immediately
-        if (html) {
-            processHtmlData(html);
-        } else {
-            throw new Error("No data received");
-        }
+        if (!response.ok) throw new Error("Failed to fetch data");
+
+        const json = await response.json(); // Extract JSON response
+        const html = json.contents; // Get the page HTML
+
+        processHtmlData(html); // Extract data
     } catch (error) {
         console.error("Fetch error:", error);
         elements.pendingStatus.textContent = `Error: ${error.message}`;
@@ -114,6 +116,7 @@ async function fetchData() {
         updateNextRefreshTime();
     }
 }
+
 
 
 async function fetchWithRetry(url, retries) {
