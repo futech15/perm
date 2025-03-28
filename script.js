@@ -2,7 +2,7 @@
 const CONFIG = {
   PROXY_URL: 'https://api.allorigins.win/get?url=https://permtimeline.com/',
   REFRESH_INTERVAL: 30 * 60 * 1000, // 30 minutes
-  DATA_VERSION: '4.1'
+  DATA_VERSION: '4.2'
 };
 
 // DOM Elements
@@ -14,38 +14,59 @@ const elements = {
   todayCount: document.getElementById('todayCount'),
   todayPercent: document.getElementById('todayPercent'),
   todayUpdated: document.getElementById('todayUpdated'),
-  nextRefresh: document.getElementById('nextRefresh'),
-  pendingChart: document.getElementById('pendingChart'),
-  completedChart: document.getElementById('completedChart')
+  nextRefresh: document.getElementById('nextRefresh')
 };
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
-  await fetchData();
+  await fetchData(); // Fetch immediately on load
   startAutoRefresh();
 });
 
-// Data Functions
 async function fetchData() {
   try {
     elements.refreshBtn.disabled = true;
     elements.pendingStatus.textContent = "Fetching data...";
     
-    const response = await fetch(CONFIG.PROXY_URL);
+    // Use cors-anywhere proxy to avoid CORS issues
+    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+    const response = await fetch(proxyUrl + 'https://permtimeline.com/');
+    
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     
-    const data = await response.json();
-    if (!data.contents) throw new Error("No content received");
+    const html = await response.text();
+    processHtmlData(html);
     
-    processHtmlData(data.contents);
     elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
     
   } catch (error) {
     console.error("Fetch error:", error);
     elements.pendingStatus.textContent = `Error: ${error.message}`;
+    
+    // Fallback: Try the original proxy if cors-anywhere fails
+    if (!error.message.includes('cors-anywhere')) {
+      await tryFallbackProxy();
+    }
   } finally {
     elements.refreshBtn.disabled = false;
+    updateNextRefreshTime();
+  }
+}
+
+async function tryFallbackProxy() {
+  try {
+    const response = await fetch(CONFIG.PROXY_URL);
+    if (!response.ok) throw new Error(`Fallback proxy failed`);
+    
+    const data = await response.json();
+    if (!data.contents) throw new Error("No content from fallback");
+    
+    processHtmlData(data.contents);
+    elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())} (via fallback)`;
+    
+  } catch (fallbackError) {
+    console.error("Fallback failed:", fallbackError);
   }
 }
 
@@ -61,6 +82,7 @@ function processHtmlData(html) {
 }
 
 function updateNovemberData(doc) {
+  let novemberUpdated = false;
   const monthSections = doc.querySelectorAll('div.timeline-section, section.timeline-entry');
   
   for (const section of monthSections) {
@@ -74,33 +96,46 @@ function updateNovemberData(doc) {
                           section.querySelector('p.font-medium');
     if (!pendingElement) continue;
     
-    const matches = pendingElement.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+    // More robust regex to handle different formats
+    const matches = pendingElement.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(?([\d.]+)?%?\)?/);
     if (!matches) continue;
     
-    elements.novemberCount.textContent = matches[1];
-    elements.novemberPercent.textContent = matches[2] + '%';
+    elements.novemberCount.textContent = matches[1] || 'N/A';
+    elements.novemberPercent.textContent = matches[2] ? `${matches[2]}%` : 'N/A';
+    novemberUpdated = true;
     break;
+  }
+  
+  if (!novemberUpdated) {
+    elements.novemberCount.textContent = 'Not found';
+    elements.novemberPercent.textContent = 'N/A';
   }
 }
 
 function updateTodaysCompletedCases(doc) {
+  let casesUpdated = false;
   const completedElements = doc.querySelectorAll('p');
   
   for (const element of completedElements) {
     if (element.textContent.includes('Total Completed Today')) {
-      // Fix: Better regex to handle the HTML comment tags
-      const matches = element.textContent.match(/Total Completed Today:\s*(?:<!--\s*-->)?(\d+)\s*(?:<!--\s*-->)?\s*\(?\s*(?:<!--\s*-->)?([\d.]+)?/);
+      // More robust parsing that handles different HTML formats
+      const text = element.textContent.replace(/<!--.*?-->/g, ''); // Remove HTML comments
+      const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(?\s*([\d.]+)?\s*%?\s*\)?/);
       
       if (matches) {
-        const count = matches[1] || '0';
-        const percent = matches[2] || '0.00';
-        
-        elements.todayCount.textContent = count;
-        elements.todayPercent.textContent = percent;
+        elements.todayCount.textContent = matches[1] || '0';
+        elements.todayPercent.textContent = matches[2] ? `${matches[2]}%` : '0.00%';
         elements.todayUpdated.textContent = formatDateTime(new Date());
+        casesUpdated = true;
       }
       break;
     }
+  }
+  
+  if (!casesUpdated) {
+    elements.todayCount.textContent = '0';
+    elements.todayPercent.textContent = '0.00%';
+    elements.todayUpdated.textContent = 'Data not found';
   }
 }
 
@@ -126,41 +161,3 @@ function formatDateTime(date) {
 function formatTime(date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
-
-// Initialize charts
-let pendingChart = new Chart(elements.pendingChart, {
-  type: 'bar',
-  data: {
-    labels: ['Nov 2023', 'Dec 2023', 'Jan 2024', 'Feb 2024', 'Mar 2024', 'Apr 2024', 'May 2024'],
-    datasets: [{
-      label: 'Pending Applications',
-      data: [6722, 13857, 11186, 11247, 10145, 10622, 12703],
-      backgroundColor: 'rgba(52, 152, 219, 0.7)'
-    }]
-  },
-  options: {
-    responsive: true,
-    scales: {
-      y: { beginAtZero: true }
-    }
-  }
-});
-
-let completedChart = new Chart(elements.completedChart, {
-  type: 'line',
-  data: {
-    labels: ['Mar 21', 'Mar 22', 'Mar 23', 'Mar 24', 'Mar 25', 'Mar 26', 'Mar 27'],
-    datasets: [{
-      label: 'Completed Cases',
-      data: [597, 223, 89, 546, 630, 662, 509],
-      borderColor: 'rgba(46, 204, 113, 1)',
-      tension: 0.1
-    }]
-  },
-  options: {
-    responsive: true,
-    scales: {
-      y: { beginAtZero: true }
-    }
-  }
-});
