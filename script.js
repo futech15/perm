@@ -1,10 +1,10 @@
 // Configuration Constants
 const CONFIG = {
   PROXY_URL: 'https://api.allorigins.win/get?url=https://permtimeline.com/',
-  REFRESH_INTERVAL: 60 * 60 * 1000, // 1 hour in milliseconds
-  MAX_COMPLETED_DAYS: 60, // Store up to 60 days of completed cases
-  DATA_VERSION: '2.1', // Data structure version
-  BACKUP_KEYS: ['gcTimelineData', 'gcTimelineData_v1', 'gcTimelineData_backup'] // Possible storage keys
+  REFRESH_INTERVAL: 30 * 60 * 1000, // 30 minutes in milliseconds
+  DAILY_UPDATE_TIME: '23:58', // Time to archive today's data (HH:MM)
+  DATA_VERSION: '3.0',
+  MAX_HISTORY_DAYS: 7 // Keep 7 days of history
 };
 
 // Static pending applications data
@@ -18,29 +18,36 @@ const STATIC_PENDING_DATA = [
   { month: 'May 2024', count: 12703, percentage: null }
 ];
 
+// Initial completed cases history
+const INITIAL_HISTORY = [
+  { date: '2024-03-21', count: 597, percentage: null },
+  { date: '2024-03-22', count: 223, percentage: null },
+  { date: '2024-03-23', count: 89, percentage: null },
+  { date: '2024-03-24', count: 546, percentage: null },
+  { date: '2024-03-25', count: 630, percentage: null },
+  { date: '2024-03-26', count: 662, percentage: null },
+  { date: '2024-03-27', count: 509, percentage: null }
+];
+
 // DOM Elements
 const elements = {
-  pendingTableBody: document.querySelector('#pendingTable tbody'),
+  todayCount: document.getElementById('todayCount'),
+  todayPercent: document.getElementById('todayPercent'),
+  todayUpdated: document.getElementById('todayUpdated'),
+  refreshTodayBtn: document.getElementById('refreshTodayBtn'),
   completedTableBody: document.querySelector('#completedTable tbody'),
-  totalPending: document.getElementById('totalPending'),
-  totalCompleted: document.getElementById('totalCompleted'),
-  lastUpdated: document.getElementById('lastUpdated'),
+  weekTotal: document.getElementById('weekTotal'),
   nextRefresh: document.getElementById('nextRefresh'),
-  refreshBtn: document.getElementById('refreshBtn'),
-  status: document.getElementById('status')
-};
-
-// Chart Instances
-let charts = {
-  pending: null,
-  completed: null
+  pendingChart: document.getElementById('pendingChart'),
+  completedChart: document.getElementById('completedChart')
 };
 
 // Application State
 let state = {
-  pending: [...STATIC_PENDING_DATA],
-  completed: [],
-  lastUpdated: null
+  today: { count: 0, percentage: 0, updated: null },
+  history: [...INITIAL_HISTORY],
+  refreshTimer: null,
+  dailyUpdateTimer: null
 };
 
 // Initialize Application
@@ -48,93 +55,66 @@ document.addEventListener('DOMContentLoaded', initializeApp);
 
 async function initializeApp() {
   try {
-    // Attempt to recover any existing data first
-    recoverData();
+    // Load any saved data
+    loadSavedData();
     
-    // Set up UI event listeners
+    // Set up event listeners
     setupEventListeners();
     
-    // Render initial data
-    renderAllData();
+    // Initialize charts
+    renderPendingChart();
+    renderCompletedChart();
     
-    // Fetch new completed cases data and start auto-refresh
-    await fetchCompletedData();
+    // Start auto-refresh and daily update schedule
     startAutoRefresh();
+    scheduleDailyUpdate();
+    
+    // Fetch today's data immediately
+    await fetchTodayData();
     
   } catch (error) {
     console.error('Initialization error:', error);
-    elements.status.textContent = 'Initialization failed. See console for details.';
   }
 }
 
 // Data Management Functions
-function recoverData() {
+function loadSavedData() {
   try {
-    // Check all possible storage keys for completed cases data
-    for (const key of CONFIG.BACKUP_KEYS) {
-      const storedData = localStorage.getItem(key);
-      if (storedData) {
-        const parsedData = JSON.parse(storedData);
-        
-        // Migrate from old versions if needed
-        if (!parsedData.version || parsedData.version === 'v1') {
-          state.completed = Array.isArray(parsedData.completed) ? parsedData.completed : [];
-          state.lastUpdated = parsedData.lastUpdated || null;
-        } else {
-          state.completed = parsedData.completed || [];
-          state.lastUpdated = parsedData.lastUpdated || null;
-        }
-        
-        // Create backup of recovered data
-        createBackup();
-        break;
+    const savedData = localStorage.getItem('gcTimelineData');
+    if (savedData) {
+      const parsedData = JSON.parse(savedData);
+      
+      // Only use saved data if version matches
+      if (parsedData.version === CONFIG.DATA_VERSION) {
+        if (parsedData.today) state.today = parsedData.today;
+        if (parsedData.history) state.history = parsedData.history;
       }
     }
   } catch (error) {
-    console.error('Data recovery error:', error);
-    // Initialize empty completed cases if recovery fails
-    state.completed = [];
+    console.error('Error loading saved data:', error);
   }
 }
 
 function saveData() {
   try {
-    // Create backup before saving
-    createBackup();
-    
-    // Prepare data for storage (only save completed cases as pending is static)
     const dataToSave = {
-      completed: state.completed,
+      today: state.today,
+      history: state.history,
       version: CONFIG.DATA_VERSION,
-      lastUpdated: state.lastUpdated,
       savedAt: new Date().toISOString()
     };
-    
     localStorage.setItem('gcTimelineData', JSON.stringify(dataToSave));
   } catch (error) {
-    console.error('Data save error:', error);
-  }
-}
-
-function createBackup() {
-  try {
-    const backupData = {
-      completed: state.completed,
-      lastUpdated: state.lastUpdated,
-      version: CONFIG.DATA_VERSION
-    };
-    localStorage.setItem('gcTimelineData_backup', JSON.stringify(backupData));
-  } catch (error) {
-    console.error('Backup creation failed:', error);
+    console.error('Error saving data:', error);
   }
 }
 
 // Data Fetching and Processing
-async function fetchCompletedData() {
+async function fetchTodayData() {
   try {
-    // Update UI state
-    elements.refreshBtn.disabled = true;
-    elements.status.textContent = 'Fetching latest completed cases...';
+    // Show loading state
+    elements.todayUpdated.textContent = 'Loading...';
+    elements.refreshTodayBtn.disabled = true;
     
     // Fetch data through proxy
     const response = await fetch(CONFIG.PROXY_URL);
@@ -143,46 +123,47 @@ async function fetchCompletedData() {
     const proxyData = await response.json();
     if (!proxyData.contents) throw new Error('No content received from proxy');
     
-    // Parse and process the HTML for completed cases
-    const completedData = processCompletedData(proxyData.contents);
+    // Parse and process the HTML
+    const todayData = processTodayData(proxyData.contents);
     
     // Update application state
-    updateCompletedState(completedData);
+    state.today = {
+      count: todayData.count,
+      percentage: todayData.percentage,
+      updated: new Date().toISOString()
+    };
     
-    // Save and render
+    // Update UI
+    updateTodayDisplay();
     saveData();
-    renderCompletedData();
-    renderCompletedChart();
     
-    // Update status
-    elements.status.textContent = 'Data updated successfully!';
-    setTimeout(() => elements.status.textContent = '', 3000);
+    // Schedule next refresh
+    scheduleNextRefresh();
     
   } catch (error) {
-    console.error('Data fetch error:', error);
-    elements.status.textContent = `Error: ${error.message}`;
+    console.error('Error fetching today data:', error);
+    elements.todayUpdated.textContent = 'Error: ' + error.message;
     
   } finally {
-    elements.refreshBtn.disabled = false;
-    scheduleNextRefresh();
+    elements.refreshTodayBtn.disabled = false;
   }
 }
 
-function processCompletedData(htmlContent) {
+function processTodayData(htmlContent) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlContent, 'text/html');
   
-  // Extract completed cases
   let completedCount = 0;
   let completedPercentage = 0;
-  const completedElements = doc.querySelectorAll('p');
   
+  // Find the "Total Completed Today" element
+  const completedElements = doc.querySelectorAll('p');
   for (const element of completedElements) {
     if (element.textContent.includes('Total Completed Today')) {
       const matches = element.textContent.match(/Total Completed Today:\s*<!--\s*-->(\d+).*?([\d.]+)%/);
       if (matches) {
         completedCount = parseInt(matches[1]);
-        completedPercentage = matches[2] ? parseFloat(matches[2]) : 0;
+        completedPercentage = parseFloat(matches[2]) || 0;
       }
       break;
     }
@@ -194,163 +175,166 @@ function processCompletedData(htmlContent) {
   };
 }
 
-function updateCompletedState(newData) {
-  // Add today's completed cases if valid
-  if (newData.count > 0) {
-    const today = new Date().toISOString().split('T')[0];
-    const existingIndex = state.completed.findIndex(entry => entry.date === today);
-    
-    if (existingIndex >= 0) {
-      // Update existing entry
-      state.completed[existingIndex] = {
-        date: today,
-        count: newData.count,
-        percentage: newData.percentage
-      };
-    } else {
-      // Add new entry
-      state.completed.unshift({
-        date: today,
-        count: newData.count,
-        percentage: newData.percentage
-      });
-      
-      // Trim to max allowed days
-      if (state.completed.length > CONFIG.MAX_COMPLETED_DAYS) {
-        state.completed = state.completed.slice(0, CONFIG.MAX_COMPLETED_DAYS);
-      }
-    }
-  }
-  
-  state.lastUpdated = new Date().toISOString();
+// UI Update Functions
+function updateTodayDisplay() {
+  elements.todayCount.textContent = state.today.count;
+  elements.todayPercent.textContent = state.today.percentage.toFixed(2);
+  elements.todayUpdated.textContent = formatDateTime(state.today.updated);
 }
 
-// UI Rendering Functions
-function renderAllData() {
-  renderPendingData();
-  renderCompletedData();
-  updateLastUpdated();
-  renderCharts();
-}
-
-function renderPendingData() {
-  elements.pendingTableBody.innerHTML = '';
-  let totalPending = 0;
-  
-  state.pending.forEach(item => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${item.month}</td>
-      <td>${item.count.toLocaleString()}</td>
-      <td>${item.percentage ? item.percentage + '%' : ''}</td>
-    `;
-    elements.pendingTableBody.appendChild(row);
-    totalPending += item.count;
-  });
-  
-  elements.totalPending.textContent = totalPending.toLocaleString();
-}
-
-function renderCompletedData() {
+function updateHistoryDisplay() {
+  // Clear existing rows
   elements.completedTableBody.innerHTML = '';
-  let totalCompleted = 0;
   
-  state.completed.forEach(item => {
+  let weekTotal = 0;
+  
+  // Add history rows (newest first)
+  const displayHistory = [...state.history].reverse();
+  displayHistory.forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td>${formatDate(item.date)}</td>
-      <td>${item.count.toLocaleString()}</td>
-      <td>${item.percentage}%</td>
+      <td>${formatDate(day.date, true)}</td>
+      <td>${day.count}</td>
+      <td>${day.percentage ? day.percentage.toFixed(2) + '%' : ''}</td>
     `;
     elements.completedTableBody.appendChild(row);
-    totalCompleted += item.count;
+    weekTotal += day.count;
   });
   
-  elements.totalCompleted.textContent = totalCompleted.toLocaleString();
-}
-
-function renderCharts() {
-  renderPendingChart();
+  // Update week total
+  elements.weekTotal.textContent = weekTotal.toLocaleString();
+  
+  // Update chart
   renderCompletedChart();
 }
 
+// Chart Functions
 function renderPendingChart() {
-  const ctx = document.getElementById('pendingChart').getContext('2d');
-  
   if (charts.pending) {
     charts.pending.destroy();
   }
   
-  if (state.pending.length > 0) {
-    charts.pending = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: state.pending.map(item => item.month),
-        datasets: [{
-          label: 'Pending Applications',
-          data: state.pending.map(item => item.count),
-          backgroundColor: 'rgba(52, 152, 219, 0.7)',
-          borderColor: 'rgba(52, 152, 219, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: getChartOptions('Month', 'Number of Applications')
-    });
-  }
+  charts.pending = new Chart(elements.pendingChart, {
+    type: 'bar',
+    data: {
+      labels: STATIC_PENDING_DATA.map(item => item.month),
+      datasets: [{
+        label: 'Pending Applications',
+        data: STATIC_PENDING_DATA.map(item => item.count),
+        backgroundColor: 'rgba(52, 152, 219, 0.7)',
+        borderColor: 'rgba(52, 152, 219, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: getChartOptions('Month', 'Number of Applications')
+  });
 }
 
 function renderCompletedChart() {
-  const ctx = document.getElementById('completedChart').getContext('2d');
-  
   if (charts.completed) {
     charts.completed.destroy();
   }
   
-  if (state.completed.length > 0) {
-    // Show last 30 days for better visibility
-    const displayData = [...state.completed].slice(0, 30).reverse();
+  // Prepare data for chart (newest first)
+  const chartData = [...state.history].reverse();
+  
+  charts.completed = new Chart(elements.completedChart, {
+    type: 'line',
+    data: {
+      labels: chartData.map(item => formatDate(item.date, true)),
+      datasets: [{
+        label: 'Daily Completed Cases',
+        data: chartData.map(item => item.count),
+        backgroundColor: 'rgba(46, 204, 113, 0.2)',
+        borderColor: 'rgba(46, 204, 113, 1)',
+        borderWidth: 2,
+        tension: 0.1,
+        fill: true
+      }]
+    },
+    options: getChartOptions('Date', 'Number of Cases')
+  });
+}
+
+// Timer and Scheduling Functions
+function startAutoRefresh() {
+  // Clear any existing timer
+  if (state.refreshTimer) {
+    clearTimeout(state.refreshTimer);
+  }
+  
+  // Schedule next refresh
+  state.refreshTimer = setTimeout(() => {
+    fetchTodayData();
+    startAutoRefresh(); // Continue the cycle
+  }, CONFIG.REFRESH_INTERVAL);
+  
+  // Update next refresh display
+  const nextRefreshTime = new Date(Date.now() + CONFIG.REFRESH_INTERVAL);
+  elements.nextRefresh.textContent = formatDateTime(nextRefreshTime);
+}
+
+function scheduleDailyUpdate() {
+  // Clear any existing timer
+  if (state.dailyUpdateTimer) {
+    clearTimeout(state.dailyUpdateTimer);
+  }
+  
+  // Calculate time until 23:58
+  const now = new Date();
+  const [targetHour, targetMinute] = CONFIG.DAILY_UPDATE_TIME.split(':').map(Number);
+  let targetTime = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    targetHour,
+    targetMinute
+  );
+  
+  // If it's already past 23:58 today, schedule for tomorrow
+  if (now > targetTime) {
+    targetTime.setDate(targetTime.getDate() + 1);
+  }
+  
+  const timeUntilUpdate = targetTime - now;
+  
+  // Set timer
+  state.dailyUpdateTimer = setTimeout(() => {
+    archiveTodayData();
+    scheduleDailyUpdate(); // Schedule for next day
+  }, timeUntilUpdate);
+}
+
+function archiveTodayData() {
+  // Only archive if we have today's data
+  if (state.today.count > 0) {
+    const today = new Date().toISOString().split('T')[0];
     
-    charts.completed = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: displayData.map(item => formatDate(item.date, true)),
-        datasets: [{
-          label: 'Daily Completed Cases',
-          data: displayData.map(item => item.count),
-          backgroundColor: 'rgba(46, 204, 113, 0.2)',
-          borderColor: 'rgba(46, 204, 113, 1)',
-          borderWidth: 2,
-          tension: 0.1,
-          fill: true
-        }]
-      },
-      options: getChartOptions('Date', 'Number of Cases')
+    // Add today's data to history
+    state.history.push({
+      date: today,
+      count: state.today.count,
+      percentage: state.today.percentage
     });
+    
+    // Keep only the most recent 7 days
+    if (state.history.length > CONFIG.MAX_HISTORY_DAYS) {
+      state.history = state.history.slice(-CONFIG.MAX_HISTORY_DAYS);
+    }
+    
+    // Reset today's count
+    state.today = { count: 0, percentage: 0, updated: null };
+    
+    // Update UI and save
+    updateTodayDisplay();
+    updateHistoryDisplay();
+    saveData();
   }
 }
 
 // Utility Functions
 function setupEventListeners() {
-  elements.refreshBtn.addEventListener('click', fetchCompletedData);
-  
-  // Add window event listeners
-  window.addEventListener('beforeunload', createBackup);
-}
-
-function startAutoRefresh() {
-  // Initial fetch already happened, just schedule next
-  scheduleNextRefresh();
-}
-
-function scheduleNextRefresh() {
-  if (state.lastUpdated) {
-    const nextRefresh = new Date(new Date(state.lastUpdated).getTime() + CONFIG.REFRESH_INTERVAL);
-    elements.nextRefresh.textContent = formatDateTime(nextRefresh);
-  }
-}
-
-function updateLastUpdated() {
-  elements.lastUpdated.textContent = state.lastUpdated ? formatDateTime(state.lastUpdated) : 'Never';
+  elements.refreshTodayBtn.addEventListener('click', fetchTodayData);
 }
 
 function formatDateTime(dateString) {
@@ -360,7 +344,10 @@ function formatDateTime(dateString) {
 
 function formatDate(dateString, short = false) {
   const date = new Date(dateString);
-  return short ? date.toLocaleDateString() : date.toISOString().split('T')[0];
+  if (short) {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  return date.toISOString().split('T')[0];
 }
 
 function getChartOptions(xLabel, yLabel) {
@@ -384,3 +371,13 @@ function getChartOptions(xLabel, yLabel) {
     }
   };
 }
+
+// Initialize charts object
+const charts = {
+  pending: null,
+  completed: null
+};
+
+// Initial render
+updateTodayDisplay();
+updateHistoryDisplay();
