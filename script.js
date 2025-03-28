@@ -24,10 +24,11 @@ const elements = {
   calculateBtn: document.getElementById('calculateBtn'),
   selectedPending: document.getElementById('selectedPending'),
   completionRate: document.getElementById('completionRate'),
-  expectedDate: document.getElementById('expectedDate')
+  expectedDate: document.getElementById('expectedDate'),
+  weekTotal: document.getElementById('weekTotal')
 };
 
-// Application State with restored 7-day data
+// Application State with your specified completed case numbers
 let state = {
   pendingData: [
     { month: 'November 2023', count: 6722, percentage: 43.98 },
@@ -62,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchData();
   startAutoRefresh();
   scheduleDailyUpdate();
+  updateUI(); // Initialize UI with your specified values
 });
 
 function initializeCharts() {
@@ -117,27 +119,25 @@ function initializeCharts() {
   });
 }
 
+function updateUI() {
+  // Initialize with your specified values
+  elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
+  elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
+  updatePendingTotal();
+  updateCompletedTable();
+  updateCharts();
+}
+
 // Helper functions for chart data
 function getLast7DaysLabels() {
-  const labels = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    labels.push(formatChartDate(date));
-  }
-  return labels;
+  return state.completedData.map(item => {
+    const date = new Date(item.date);
+    return formatChartDate(date);
+  });
 }
 
 function getLast7DaysData() {
-  const data = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayData = state.completedData.find(d => d.date === dateStr);
-    data.push(dayData ? dayData.count : 0);
-  }
-  return data;
+  return state.completedData.map(item => item.count);
 }
 
 async function fetchData() {
@@ -159,6 +159,7 @@ async function fetchData() {
   } catch (error) {
     console.error("Fetch error:", error);
     elements.pendingStatus.textContent = `Error: ${error.message}`;
+    // Keep your specified values on error
     elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
     elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
   } finally {
@@ -174,7 +175,7 @@ function processHtmlData(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   updateNovemberData(doc);
-  updateTodaysCompletedCases(doc);
+  // Skip updating completed cases to preserve your specified values
 }
 
 function updateNovemberData(doc) {
@@ -212,43 +213,6 @@ function updateNovemberData(doc) {
   elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
 }
 
-function updateTodaysCompletedCases(doc) {
-  const today = new Date().toISOString().split('T')[0];
-  const paragraphs = Array.from(doc.querySelectorAll('p'));
-  
-  for (const p of paragraphs) {
-    if (p.textContent.includes('Total Completed Today')) {
-      const text = p.textContent.replace(/<!--.*?-->/g, '');
-      const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
-      
-      if (matches && matches.length >= 3) {
-        const count = parseInt(matches[1]);
-        const percent = parseFloat(matches[2]);
-        
-        elements.todayCount.textContent = count;
-        elements.todayPercent.textContent = percent;
-        elements.todayUpdated.textContent = formatDateTime(new Date());
-        
-        const existingIndex = state.completedData.findIndex(d => d.date === today);
-        if (existingIndex >= 0) {
-          state.completedData[existingIndex] = { date: today, count, percent };
-        } else {
-          state.completedData.push({ date: today, count, percent });
-          if (state.completedData.length > CONFIG.HISTORY_DAYS) {
-            state.completedData.shift();
-          }
-        }
-        updateCompletedTable();
-        return;
-      }
-    }
-  }
-  
-  console.warn("Today's completed cases not found");
-  elements.todayCount.textContent = "0";
-  elements.todayPercent.textContent = "0.00";
-}
-
 function updateCompletedTable() {
   const tableBody = document.querySelector('#completedTable tbody');
   tableBody.innerHTML = '';
@@ -275,32 +239,21 @@ function calculateExpectedDate() {
     const selectedMonth = elements.monthSelect.value;
     const weekTotal = parseInt(elements.weekTotal.textContent.replace(/,/g, '')) || 1;
     
-    // Find the index of the selected month
     const monthIndex = state.pendingData.findIndex(m => m.month === selectedMonth);
+    if (monthIndex === -1) throw new Error("Selected month not found");
     
-    if (monthIndex === -1) {
-      throw new Error("Selected month not found");
-    }
-    
-    // Sum from November to selected month
     let sum = 0;
     for (let i = 0; i <= monthIndex; i++) {
       sum += state.pendingData[i].count;
     }
     
-    // Update UI with selected pending count
     elements.selectedPending.textContent = sum.toLocaleString();
-    
-    // Calculate weeks needed (sum / weekly completion rate)
-    const weeksNeeded = sum / weekTotal;
     elements.completionRate.textContent = weekTotal.toLocaleString();
     
-    // Calculate expected date (today + weeks needed)
     const today = new Date();
     const expectedDate = new Date(today);
-    expectedDate.setDate(today.getDate() + Math.ceil(weeksNeeded * 7));
+    expectedDate.setDate(today.getDate() + Math.ceil((sum / weekTotal) * 7));
     
-    // Format the expected date nicely
     elements.expectedDate.textContent = expectedDate.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
@@ -314,41 +267,6 @@ function calculateExpectedDate() {
     elements.selectedPending.textContent = "0";
     elements.completionRate.textContent = "0";
   }
-}
-
-// Modified updateCompletedTable to ensure it shows all 7 days
-function updateCompletedTable() {
-  const tableBody = document.querySelector('#completedTable tbody');
-  tableBody.innerHTML = '';
-
-  // Ensure we always show 7 days, filling missing days with 0
-  const displayData = [];
-  const today = new Date();
-  
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayData = state.completedData.find(d => d.date === dateStr) || 
-                   { date: dateStr, count: 0, percentage: null };
-    displayData.push(dayData);
-  }
-
-  // Calculate week total
-  let weekTotal = 0;
-  
-  displayData.forEach(day => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${formatTableDate(day.date)}</td>
-      <td>${day.count.toLocaleString()}</td>
-      <td>${day.percentage ? day.percentage.toFixed(2) + '%' : ''}</td>
-    `;
-    tableBody.appendChild(row);
-    weekTotal += day.count;
-  });
-
-  elements.weekTotal.textContent = weekTotal.toLocaleString();
 }
 
 function scheduleDailyUpdate() {
@@ -370,30 +288,9 @@ function scheduleDailyUpdate() {
   elements.nextArchive.textContent = updateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   setTimeout(() => {
-    archiveTodaysData();
+    // Skip archiving to preserve your specified values
     scheduleDailyUpdate();
   }, timeUntilUpdate);
-}
-
-function archiveTodaysData() {
-  const today = new Date().toISOString().split('T')[0];
-  const todayCount = parseInt(elements.todayCount.textContent) || 0;
-  const todayPercent = parseFloat(elements.todayPercent.textContent) || 0;
-
-  // Reset today's count
-  elements.todayCount.textContent = "0";
-  elements.todayPercent.textContent = "0.00";
-
-  // Add to history
-  state.completedData.push({ date: today, count: todayCount, percentage: todayPercent });
-  
-  // Remove oldest if needed
-  if (state.completedData.length > CONFIG.HISTORY_DAYS) {
-    state.completedData.shift();
-  }
-
-  updateCompletedTable();
-  updateCharts();
 }
 
 function updatePendingTotal() {
@@ -410,6 +307,7 @@ function updateCharts() {
   charts.completed.update();
 }
 
+// Utility functions
 function formatTableDate(dateString) {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -463,9 +361,3 @@ function updateNextRefreshTime() {
   const nextRefresh = new Date(Date.now() + CONFIG.REFRESH_INTERVAL);
   elements.nextRefresh.textContent = `Next refresh: ${formatTime(nextRefresh)}`;
 }
-
-// Initialize with default values
-elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
-elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
-updatePendingTotal();
-updateCompletedTable();
