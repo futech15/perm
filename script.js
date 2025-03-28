@@ -132,15 +132,15 @@ function updateUI() {
 }
 
 function getLast7DaysLabels() {
-  // Always show March 21-27 in the chart
-  return [
-    'Mar 21', 'Mar 22', 'Mar 23', 'Mar 24', 
-    'Mar 25', 'Mar 26', 'Mar 27'
-  ];
+  // Get the dates from state (will be dynamic after archiving)
+  return state.completedData.map(day => {
+    const date = new Date(day.date);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  });
 }
 
 function getLast7DaysData() {
-  // Return data for March 21-27 from completedData
+  // Simply return the counts in order from state
   return state.completedData.map(day => day.count);
 }
 
@@ -252,8 +252,8 @@ function updateCompletedTable() {
 
   let weekTotal = 0;
 
-  // Show March 21-27 in the table
-  state.completedData.forEach(day => {
+  // Show last 7 days (newest first)
+  [...state.completedData].reverse().forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${formatTableDate(day.date)}</td>
@@ -264,7 +264,7 @@ function updateCompletedTable() {
     weekTotal += day.count;
   });
 
-  // Only show today's count if it's after the archive time
+  // Show today's count if before archive time
   const now = new Date();
   const archiveTime = new Date(
     now.getFullYear(),
@@ -275,7 +275,7 @@ function updateCompletedTable() {
     0
   );
 
-  if (now > archiveTime && state.todayCompleted.count > 0) {
+  if (now <= archiveTime && state.todayCompleted.count > 0) {
     const todayRow = document.createElement('tr');
     todayRow.innerHTML = `
       <td>Today</td>
@@ -288,6 +288,7 @@ function updateCompletedTable() {
 
   elements.weekTotal.textContent = weekTotal.toLocaleString();
 }
+
 
 function calculateExpectedDate() {
   try {
@@ -353,18 +354,14 @@ function archiveTodaysData() {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
     
-    // Add today's data to history (as March 28)
-    const newDate = new Date(today);
-    newDate.setDate(28); // Force March 28
-    const newDateStr = newDate.toISOString().split('T')[0];
-    
+    // Add today's data to history
     state.completedData.push({
-      date: newDateStr,
+      date: todayStr,
       count: state.todayCompleted.count,
       percentage: state.todayCompleted.percentage
     });
     
-    // Remove oldest date (March 21)
+    // Remove oldest day
     if (state.completedData.length > CONFIG.HISTORY_DAYS) {
       state.completedData.shift();
     }
