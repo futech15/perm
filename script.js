@@ -148,29 +148,37 @@ function processHtmlData(html) {
 
 function updateNovemberData(doc) {
   const sections = Array.from(doc.querySelectorAll('section.timeline-entry, div.timeline-section'));
+  
   const novemberSection = sections.find(section => {
     const header = section.querySelector('h2, h3');
-    return header && header.textContent.includes('November');
+    return header && /November/i.test(header.textContent);
   });
 
   if (novemberSection) {
-    const pendingText = novemberSection.textContent;
-    const matches = pendingText.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
-    
-    if (matches && matches.length >= 3) {
-      const newCount = parseInt(matches[1].replace(/,/g, ''));
-      const newPercent = parseFloat(matches[2]);
-      
+    const pendingMatch = novemberSection.textContent.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
+
+    if (pendingMatch) {
+      const newCount = parseInt(pendingMatch[1].replace(/,/g, ''), 10);
+      const newPercent = parseFloat(pendingMatch[2]);
+
       // Update state
-      state.pendingData[0].count = newCount;
-      state.pendingData[0].percentage = newPercent;
-      
+      const novemberIndex = state.pendingData.findIndex(m => /November/i.test(m.month));
+      if (novemberIndex !== -1) {
+        state.pendingData[novemberIndex].count = newCount;
+        state.pendingData[novemberIndex].percentage = newPercent;
+      }
+
       // Update UI
       elements.novemberCount.textContent = newCount.toLocaleString();
       elements.novemberPercent.textContent = `${newPercent}%`;
+    } else {
+      console.warn("November pending applications data not found.");
     }
+  } else {
+    console.warn("November section not found in the fetched data.");
   }
 }
+
 
 function updateTodaysCompletedCases(doc) {
   const today = new Date().toISOString().split('T')[0];
