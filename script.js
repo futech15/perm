@@ -1,8 +1,9 @@
 // Configuration
 const CONFIG = {
   REFRESH_INTERVAL: 30 * 60 * 1000, // 30 minutes
-  DATA_VERSION: '5.0',
-  HISTORY_DAYS: 7 // Number of days to show in completed cases chart
+  DAILY_UPDATE_HOUR: 23, // 11 PM
+  DAILY_UPDATE_MINUTE: 58, // 58 minutes
+  HISTORY_DAYS: 7 // Number of days to keep
 };
 
 // DOM Elements
@@ -55,7 +56,61 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   await fetchData();
   startAutoRefresh();
+  scheduleDailyUpdate(); // Add this line
 });
+
+// Add this new function to schedule daily updates
+function scheduleDailyUpdate() {
+  const now = new Date();
+  const updateTime = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    CONFIG.DAILY_UPDATE_HOUR,
+    CONFIG.DAILY_UPDATE_MINUTE,
+    0
+  );
+
+  // If it's already past 23:58 today, schedule for tomorrow
+  if (now > updateTime) {
+    updateTime.setDate(updateTime.getDate() + 1);
+  }
+
+  const timeUntilUpdate = updateTime - now;
+
+  setTimeout(() => {
+    archiveTodaysData();
+    // Schedule the next update
+    scheduleDailyUpdate();
+  }, timeUntilUpdate);
+
+  console.log(`Next daily update scheduled for: ${updateTime}`);
+}
+
+// Add this new function to archive today's data
+function archiveTodaysData() {
+  const today = new Date().toISOString().split('T')[0];
+  const todayCount = parseInt(elements.todayCount.textContent) || 0;
+  const todayPercent = parseFloat(elements.todayPercent.textContent) || 0;
+
+  // Add today's data to history
+  state.completedData.push({
+    date: today,
+    count: todayCount,
+    percentage: todayPercent
+  });
+
+  // Remove oldest day if we exceed history limit
+  if (state.completedData.length > CONFIG.HISTORY_DAYS) {
+    state.completedData.shift();
+  }
+
+  // Update the table and chart
+  updateCompletedTable();
+  updateCharts();
+
+  console.log(`Archived today's data: ${todayCount} cases`);
+}
 
 function initializeCharts() {
   // Destroy existing charts if they exist
@@ -256,6 +311,76 @@ function updateTodaysCompletedCases(doc) {
       }
     }
   }
+
+// Add this new function to update the completed table
+function updateCompletedTable() {
+  const tableBody = document.querySelector('#completedTable tbody');
+  tableBody.innerHTML = '';
+
+  // Display most recent first
+  const displayData = [...state.completedData].reverse();
+
+  displayData.forEach(day => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${formatTableDate(day.date)}</td>
+      <td>${day.count.toLocaleString()}</td>
+      <td>${day.percentage ? day.percentage.toFixed(2) + '%' : ''}</td>
+    `;
+    tableBody.appendChild(row);
+  });
+
+  // Update week total
+  const weekTotal = displayData.reduce((sum, day) => sum + day.count, 0);
+  document.getElementById('weekTotal').textContent = weekTotal.toLocaleString();
+}
+
+// Add this helper function
+function formatTableDate(dateString) {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric' 
+  });
+}
+
+// Modify the updateTodaysCompletedCases function
+function updateTodaysCompletedCases(doc) {
+  const today = new Date().toISOString().split('T')[0];
+  const paragraphs = Array.from(doc.querySelectorAll('p'));
+  
+  for (const p of paragraphs) {
+    if (p.textContent.includes('Total Completed Today')) {
+      const text = p.textContent.replace(/<!--.*?-->/g, '');
+      const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
+      
+      if (matches && matches.length >= 3) {
+        const count = parseInt(matches[1]);
+        const percent = parseFloat(matches[2]);
+        
+        // Update today's display
+        elements.todayCount.textContent = count;
+        elements.todayPercent.textContent = percent;
+        elements.todayUpdated.textContent = formatDateTime(new Date());
+        return;
+      }
+    }
+  }
+  
+  // Fallback if not found
+  elements.todayCount.textContent = "0";
+  elements.todayPercent.textContent = "0.00";
+}
+
+// Remove the old completed data update from processHtmlData
+function processHtmlData(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  updateNovemberData(doc);
+  updateTodaysCompletedCases(doc); // Just updates today's display now
+}
+
   
   // Fallback if not found
   console.warn("Today's completed cases not found");
