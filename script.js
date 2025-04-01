@@ -41,7 +41,8 @@ let state = {
     { month: 'May 2024', count: 12703, percentage: null }
   ],
   completedData: [], // Will be initialized with last 7 days
-  todayCompleted: { count: 0, percentage: 0 }
+  todayCompleted: { count: 0, percentage: 0 },
+  initialized: false
 };
 
 // Chart instances
@@ -52,27 +53,51 @@ let charts = {
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
-  initializeCompletedData();
+  await initializeApplication();
+});
+
+async function initializeApplication() {
+  await initializeCompletedData();
   initializeCharts();
   setupEventListeners();
   await fetchData();
   startAutoRefresh();
   scheduleDailyUpdate();
   updateUI();
-});
+  state.initialized = true;
+}
 
-function initializeCompletedData() {
-  // Initialize with empty data for last 7 days (excluding today)
+async function initializeCompletedData() {
   const today = new Date();
-  for (let i = 6; i >= 0; i--) {
+  today.setHours(0, 0, 0, 0);
+  
+  // Create array for last 7 days (excluding today)
+  state.completedData = Array.from({ length: CONFIG.HISTORY_DAYS }, (_, i) => {
     const date = new Date(today);
-    date.setDate(date.getDate() - i - 1); // Subtract 1 to exclude today
-    const dateStr = date.toISOString().split('T')[0];
-    state.completedData.push({
-      date: dateStr,
+    date.setDate(date.getDate() - (CONFIG.HISTORY_DAYS - i));
+    return {
+      date: date.toISOString().split('T')[0],
       count: 0,
       percentage: null
-    });
+    };
+  });
+
+  // Try to load any existing data from localStorage
+  const savedData = localStorage.getItem('completedData');
+  if (savedData) {
+    try {
+      const parsedData = JSON.parse(savedData);
+      // Merge saved data with our initialized structure
+      parsedData.forEach(savedDay => {
+        const existingDay = state.completedData.find(d => d.date === savedDay.date);
+        if (existingDay) {
+          existingDay.count = savedDay.count;
+          existingDay.percentage = savedDay.percentage;
+        }
+      });
+    } catch (e) {
+      console.error('Failed to parse saved data:', e);
+    }
   }
 }
 
@@ -84,7 +109,7 @@ function initializeCharts() {
   charts.pending = new Chart(elements.pendingChart, {
     type: 'bar',
     data: {
-      labels: state.pendingData.map(m => m.month.split(' ')[0] + ' ' + m.month.split(' ')[1].slice(2)),
+      labels: state.pendingData.map(m => `${m.month.split(' ')[0]} '${m.month.split(' ')[1].slice(2)}`),
       datasets: [{
         label: 'Pending Applications',
         data: state.pendingData.map(m => m.count),
@@ -96,7 +121,7 @@ function initializeCharts() {
     options: getChartOptions('Month', 'Applications')
   });
 
-  // Completed Cases Chart (shows last 7 days excluding today)
+  // Completed Cases Chart
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
     data: {
@@ -119,22 +144,33 @@ function initializeCharts() {
 }
 
 function updateUI() {
+  if (!state.initialized) return;
+
+  // Update pending data display
   elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
   elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
+  
+  // Update today's data display
   elements.todayCount.textContent = state.todayCompleted.count;
   elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
   elements.todayUpdated.textContent = formatDateTime(new Date());
+  
+  // Update other UI elements
   updatePendingTotal();
   updateCompletedTable();
   updateCharts();
 }
 
 function getLast7DaysLabels() {
-  return state.completedData.map(day => formatChartDate(new Date(day.date)));
+  return [...state.completedData]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map(day => formatChartDate(new Date(day.date)));
 }
 
 function getLast7DaysData() {
-  return state.completedData.map(day => day.count);
+  return [...state.completedData]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map(day => day.count);
 }
 
 async function fetchData() {
@@ -147,15 +183,17 @@ async function fetchData() {
     const response = await fetch(proxyUrl + targetUrl);
     
     if (!response.ok) throw new Error(`Network error: ${response.status}`);
-    processHtmlData(await response.text());
+    
+    const html = await response.text();
+    processHtmlData(html);
     
   } catch (error) {
     console.error("Fetch error:", error);
     elements.pendingStatus.textContent = `Error: ${error.message}`;
+    // Retry after 1 minute if failed
+    setTimeout(fetchData, 60000);
   } finally {
-    updatePendingTotal();
-    updateCharts();
-    elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
+    updateUI();
     elements.refreshBtn.disabled = false;
     updateNextRefreshTime();
   }
@@ -165,6 +203,7 @@ function processHtmlData(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   updateNovemberData(doc);
   updateTodaysCompletedCases(doc);
+  saveCompletedData();
 }
 
 function updateNovemberData(doc) {
@@ -204,7 +243,12 @@ function updateCompletedTable() {
   elements.completedTableBody.innerHTML = '';
   let weekTotal = 0;
 
-  state.completedData.forEach(day => {
+  // Sort by date ascending
+  const sortedData = [...state.completedData].sort((a, b) => 
+    new Date(a.date) - new Date(b.date)
+  );
+
+  sortedData.forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${formatTableDate(day.date)}</td>
@@ -218,17 +262,24 @@ function updateCompletedTable() {
   elements.weekTotal.textContent = weekTotal.toLocaleString();
 }
 
+function saveCompletedData() {
+  try {
+    localStorage.setItem('completedData', JSON.stringify(state.completedData));
+  } catch (e) {
+    console.error('Failed to save data:', e);
+  }
+}
+
 function archiveTodaysData() {
   if (state.todayCompleted.count > 0) {
-    // Add today's data as yesterday's date
+    // Get yesterday's date
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
     
     // Remove the oldest day
-    if (state.completedData.length >= CONFIG.HISTORY_DAYS) {
-      state.completedData.shift();
-    }
+    state.completedData.shift();
     
     // Add yesterday's data
     state.completedData.push({
@@ -241,6 +292,8 @@ function archiveTodaysData() {
     state.todayCompleted.count = 0;
     state.todayCompleted.percentage = 0;
     
+    // Save and update UI
+    saveCompletedData();
     updateUI();
   }
 }
@@ -256,40 +309,61 @@ function scheduleDailyUpdate() {
     0
   );
 
+  // If already past today's update time, schedule for tomorrow
   if (now > updateTime) {
     updateTime.setDate(updateTime.getDate() + 1);
   }
 
+  const timeUntilUpdate = updateTime - now;
+  elements.nextArchive.textContent = `Next archive: ${formatTime(updateTime)}`;
+
   setTimeout(() => {
     archiveTodaysData();
-    scheduleDailyUpdate();
-  }, updateTime - now);
-  
-  elements.nextArchive.textContent = updateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    scheduleDailyUpdate(); // Reschedule for next day
+  }, timeUntilUpdate);
 }
 
 // Utility functions
 function formatTableDate(dateString) {
-  return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    weekday: 'short', 
+    month: 'short', 
+    day: 'numeric' 
+  });
 }
 
 function formatChartDate(date) {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric' 
+  });
 }
 
 function formatDateTime(date) {
-  return date.toLocaleString();
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function formatTime(date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
 }
 
 function updatePendingTotal() {
-  elements.totalPending.textContent = state.pendingData.reduce((sum, month) => sum + month.count, 0).toLocaleString();
+  const total = state.pendingData.reduce((sum, month) => sum + month.count, 0);
+  elements.totalPending.textContent = total.toLocaleString();
 }
 
 function updateCharts() {
+  if (!charts.pending || !charts.completed) return;
+  
   charts.pending.data.datasets[0].data = state.pendingData.map(m => m.count);
   charts.pending.update();
   
@@ -303,8 +377,28 @@ function getChartOptions(xLabel, yLabel) {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      y: { beginAtZero: true, title: { display: true, text: yLabel } },
-      x: { title: { display: true, text: xLabel } }
+      y: { 
+        beginAtZero: true, 
+        title: { 
+          display: true, 
+          text: yLabel 
+        } 
+      },
+      x: { 
+        title: { 
+          display: true, 
+          text: xLabel 
+        } 
+      }
+    },
+    plugins: {
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return `${context.dataset.label}: ${context.raw.toLocaleString()}`;
+          }
+        }
+      }
     }
   };
 }
@@ -312,6 +406,11 @@ function getChartOptions(xLabel, yLabel) {
 function setupEventListeners() {
   elements.refreshBtn.addEventListener('click', fetchData);
   elements.calculateBtn.addEventListener('click', calculateExpectedDate);
+  
+  // Add error handling for chart elements
+  if (!elements.pendingChart || !elements.completedChart) {
+    console.error('Chart elements not found!');
+  }
 }
 
 function startAutoRefresh() {
@@ -320,29 +419,42 @@ function startAutoRefresh() {
 }
 
 function updateNextRefreshTime() {
-  elements.nextRefresh.textContent = `Next refresh: ${formatTime(new Date(Date.now() + CONFIG.REFRESH_INTERVAL))}`;
+  const nextRefresh = new Date(Date.now() + CONFIG.REFRESH_INTERVAL);
+  elements.nextRefresh.textContent = `Next refresh: ${formatTime(nextRefresh)}`;
 }
 
 function calculateExpectedDate() {
   try {
     const selectedMonth = elements.monthSelect.value;
     const monthIndex = state.pendingData.findIndex(m => m.month === selectedMonth);
-    if (monthIndex === -1) throw new Error("Selected month not found");
     
-    const sum = state.pendingData.slice(0, monthIndex + 1).reduce((sum, month) => sum + month.count, 0);
+    if (monthIndex === -1) {
+      throw new Error("Selected month not found");
+    }
+    
+    const sum = state.pendingData
+      .slice(0, monthIndex + 1)
+      .reduce((sum, month) => sum + month.count, 0);
+      
     const weekTotal = parseInt(elements.weekTotal.textContent.replace(/,/g, '')) || 1;
+    const daysToAdd = Math.ceil((sum / weekTotal) * 7);
     
     const expectedDate = new Date();
-    expectedDate.setDate(expectedDate.getDate() + Math.ceil((sum / weekTotal) * 7));
+    expectedDate.setDate(expectedDate.getDate() + daysToAdd);
     
     elements.selectedPending.textContent = sum.toLocaleString();
     elements.completionRate.textContent = weekTotal.toLocaleString();
     elements.expectedDate.textContent = expectedDate.toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
     
   } catch (error) {
     console.error("Calculation error:", error);
     elements.expectedDate.textContent = "Error in calculation";
+    elements.selectedPending.textContent = "0";
+    elements.completionRate.textContent = "0";
   }
 }
