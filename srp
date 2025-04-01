@@ -40,13 +40,13 @@ let state = {
     { month: 'May 2024', count: 12703, percentage: null }
   ],
   completedData: [
-    { date: '2024-03-21', count: 597, percentage: null },
-    { date: '2024-03-22', count: 223, percentage: null },
-    { date: '2024-03-23', count: 89, percentage: null },
-    { date: '2024-03-24', count: 546, percentage: null },
     { date: '2024-03-25', count: 630, percentage: null },
     { date: '2024-03-26', count: 662, percentage: null },
-    { date: '2024-03-27', count: 509, percentage: null }
+    { date: '2024-03-27', count: 509, percentage: null },
+    { date: '2024-03-28', count: 467, percentage: null },
+    { date: '2024-03-29', count: 107, percentage: null },
+    { date: '2024-03-30', count: 97, percentage: null },
+    { date: '2024-03-31', count: 522, percentage: null }
   ],
   todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
