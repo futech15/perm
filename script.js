@@ -40,7 +40,17 @@ let state = {
     { month: 'April 2024', count: 10622, percentage: null },
     { month: 'May 2024', count: 12703, percentage: null }
   ],
-  completedData: [], // Will be initialized with last 7 days
+    completedData: [
+    { date: '2024-03-25', count: 630, percentage: null },
+    { date: '2024-03-26', count: 662, percentage: null },
+    { date: '2024-03-27', count: 509, percentage: null },
+    { date: '2024-03-28', count: 467, percentage: null },
+    { date: '2024-03-29', count: 107, percentage: null },
+    { date: '2024-03-30', count: 97, percentage: null },
+    { date: '2024-03-31', count: 522, percentage: null }
+  ],
+  todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
+};
   todayCompleted: { count: 0, percentage: 0 },
   initialized: false
 };
