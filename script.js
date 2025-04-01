@@ -25,11 +25,10 @@ const elements = {
   selectedPending: document.getElementById('selectedPending'),
   completionRate: document.getElementById('completionRate'),
   expectedDate: document.getElementById('expectedDate'),
-  weekTotal: document.getElementById('weekTotal'),
-  completedTableBody: document.querySelector('#completedTable tbody')
+  weekTotal: document.getElementById('weekTotal')
 };
 
-// Application State
+// Application State with your historical data and today's dynamic data
 let state = {
   pendingData: [
     { month: 'November 2023', count: 6722, percentage: 43.98 },
@@ -40,7 +39,7 @@ let state = {
     { month: 'April 2024', count: 10622, percentage: null },
     { month: 'May 2024', count: 12703, percentage: null }
   ],
-    completedData: [
+  completedData: [
     { date: '2024-03-25', count: 630, percentage: null },
     { date: '2024-03-26', count: 662, percentage: null },
     { date: '2024-03-27', count: 509, percentage: null },
@@ -51,9 +50,6 @@ let state = {
   ],
   todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
-  todayCompleted: { count: 0, percentage: 0 },
-  initialized: false
-};
 
 // Chart instances
 let charts = {
@@ -63,53 +59,13 @@ let charts = {
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
-  await initializeApplication();
-});
-
-async function initializeApplication() {
-  await initializeCompletedData();
   initializeCharts();
   setupEventListeners();
   await fetchData();
   startAutoRefresh();
   scheduleDailyUpdate();
   updateUI();
-  state.initialized = true;
-}
-
-async function initializeCompletedData() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  // Create array for last 7 days (excluding today)
-  state.completedData = Array.from({ length: CONFIG.HISTORY_DAYS }, (_, i) => {
-    const date = new Date(today);
-    date.setDate(date.getDate() - (CONFIG.HISTORY_DAYS - i));
-    return {
-      date: date.toISOString().split('T')[0],
-      count: 0,
-      percentage: null
-    };
-  });
-
-  // Try to load any existing data from localStorage
-  const savedData = localStorage.getItem('completedData');
-  if (savedData) {
-    try {
-      const parsedData = JSON.parse(savedData);
-      // Merge saved data with our initialized structure
-      parsedData.forEach(savedDay => {
-        const existingDay = state.completedData.find(d => d.date === savedDay.date);
-        if (existingDay) {
-          existingDay.count = savedDay.count;
-          existingDay.percentage = savedDay.percentage;
-        }
-      });
-    } catch (e) {
-      console.error('Failed to parse saved data:', e);
-    }
-  }
-}
+});
 
 function initializeCharts() {
   if (charts.pending) charts.pending.destroy();
@@ -119,7 +75,7 @@ function initializeCharts() {
   charts.pending = new Chart(elements.pendingChart, {
     type: 'bar',
     data: {
-      labels: state.pendingData.map(m => `${m.month.split(' ')[0]} '${m.month.split(' ')[1].slice(2)}`),
+      labels: state.pendingData.map(m => m.month.split(' ')[0] + ' ' + m.month.split(' ')[1].slice(2)),
       datasets: [{
         label: 'Pending Applications',
         data: state.pendingData.map(m => m.count),
@@ -131,7 +87,7 @@ function initializeCharts() {
     options: getChartOptions('Month', 'Applications')
   });
 
-  // Completed Cases Chart
+  // Completed Cases Chart (shows historical data + today)
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
     data: {
@@ -149,49 +105,81 @@ function initializeCharts() {
         pointHoverRadius: 7
       }]
     },
-    options: getChartOptions('Date', 'Cases')
+    options: {
+      ...getChartOptions('Date', 'Cases'),
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `${context.dataset.label}: ${context.raw}`;
+            }
+          }
+        }
+      }
+    }
   });
 }
 
 function updateUI() {
-  if (!state.initialized) return;
-
-  // Update pending data display
+  // Initialize with your specified values
   elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
   elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
-  
-  // Update today's data display
   elements.todayCount.textContent = state.todayCompleted.count;
   elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
   elements.todayUpdated.textContent = formatDateTime(new Date());
-  
-  // Update other UI elements
   updatePendingTotal();
   updateCompletedTable();
   updateCharts();
 }
 
+// Helper functions for chart data
 function getLast7DaysLabels() {
-  return [...state.completedData]
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .map(day => formatChartDate(new Date(day.date)));
+  const today = new Date();
+  const dates = [];
+  
+  // Add historical dates (6 days ago to yesterday)
+  for (let i = 6; i >= 1; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    dates.push(formatChartDate(date));
+  }
+  
+  // Add today's date
+  dates.push(formatChartDate(today));
+  
+  return dates;
 }
 
 function getLast7DaysData() {
-  return [...state.completedData]
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .map(day => day.count);
+  const today = new Date().toISOString().split('T')[0];
+  const data = [];
+  
+  // Add historical data (6 days ago to yesterday)
+  for (let i = 6; i >= 1; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayData = state.completedData.find(d => d.date === dateStr);
+    data.push(dayData ? dayData.count : 0);
+  }
+  
+  // Add today's count
+  data.push(state.todayCompleted.count);
+  
+  return data;
 }
 
 async function fetchData() {
   try {
     elements.refreshBtn.disabled = true;
     elements.pendingStatus.textContent = "Fetching data...";
-    
+    elements.novemberCount.textContent = "Updating...";
+    elements.novemberPercent.textContent = "Updating...";
+
     const proxyUrl = 'https://api.allorigins.win/raw?url=';
     const targetUrl = encodeURIComponent('https://permtimeline.com/');
-    const response = await fetch(proxyUrl + targetUrl);
     
+    const response = await fetch(proxyUrl + targetUrl);
     if (!response.ok) throw new Error(`Network error: ${response.status}`);
     
     const html = await response.text();
@@ -200,111 +188,154 @@ async function fetchData() {
   } catch (error) {
     console.error("Fetch error:", error);
     elements.pendingStatus.textContent = `Error: ${error.message}`;
-    // Retry after 1 minute if failed
-    setTimeout(fetchData, 60000);
+    elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
+    elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
   } finally {
-    updateUI();
+    updatePendingTotal();
+    updateCharts();
+    elements.pendingStatus.textContent = `Last updated: ${formatDateTime(new Date())}`;
     elements.refreshBtn.disabled = false;
     updateNextRefreshTime();
   }
 }
 
 function processHtmlData(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
   updateNovemberData(doc);
-  updateTodaysCompletedCases(doc);
-  saveCompletedData();
+  updateTodaysCompletedCases(doc); // Only updates today's count
 }
 
 function updateNovemberData(doc) {
-  const sections = Array.from(doc.querySelectorAll('section, div'));
-  const novemberSection = sections.find(section => {
-    const header = section.querySelector('h2, h3') || section;
-    return header.textContent.includes('November');
-  });
-
+  const possibleSelectors = ['section.timeline-entry', 'div.timeline-section', 'section', 'div'];
+  let novemberSection = null;
+  
+  for (const selector of possibleSelectors) {
+    const sections = Array.from(doc.querySelectorAll(selector));
+    novemberSection = sections.find(section => {
+      const header = section.querySelector('h2, h3') || section;
+      return header.textContent.includes('November');
+    });
+    if (novemberSection) break;
+  }
+  
   if (novemberSection) {
     const pendingText = novemberSection.textContent;
     const matches = pendingText.match(/Pending Applications:\s*([\d,]+)\s*\(([\d.]+)%\)/);
     
     if (matches && matches.length >= 3) {
-      state.pendingData[0].count = parseInt(matches[1].replace(/,/g, ''));
-      state.pendingData[0].percentage = parseFloat(matches[2]);
+      const newCount = parseInt(matches[1].replace(/,/g, ''));
+      const newPercent = parseFloat(matches[2]);
+      
+      state.pendingData[0].count = newCount;
+      state.pendingData[0].percentage = newPercent;
+      
+      elements.novemberCount.textContent = newCount.toLocaleString();
+      elements.novemberPercent.textContent = `${newPercent}%`;
+      return;
     }
   }
+  
+  console.warn("November data not found in HTML");
+  elements.novemberCount.textContent = state.pendingData[0].count.toLocaleString();
+  elements.novemberPercent.textContent = `${state.pendingData[0].percentage}%`;
 }
 
 function updateTodaysCompletedCases(doc) {
+  const today = new Date().toISOString().split('T')[0];
   const paragraphs = Array.from(doc.querySelectorAll('p'));
-  const todayParagraph = paragraphs.find(p => p.textContent.includes('Total Completed Today'));
   
-  if (todayParagraph) {
-    const text = todayParagraph.textContent.replace(/<!--.*?-->/g, '');
-    const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
-    
-    if (matches && matches.length >= 3) {
-      state.todayCompleted.count = parseInt(matches[1]);
-      state.todayCompleted.percentage = parseFloat(matches[2]);
+  for (const p of paragraphs) {
+    if (p.textContent.includes('Total Completed Today')) {
+      const text = p.textContent.replace(/<!--.*?-->/g, '');
+      const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
+      
+      if (matches && matches.length >= 3) {
+        state.todayCompleted.count = parseInt(matches[1]);
+        state.todayCompleted.percentage = parseFloat(matches[2]);
+        
+        elements.todayCount.textContent = state.todayCompleted.count;
+        elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
+        elements.todayUpdated.textContent = formatDateTime(new Date());
+        updateCharts();
+        return;
+      }
     }
   }
+  
+  console.warn("Today's completed cases not found");
+  state.todayCompleted.count = 0;
+  state.todayCompleted.percentage = 0;
+  elements.todayCount.textContent = "0";
+  elements.todayPercent.textContent = "0.00";
 }
 
 function updateCompletedTable() {
-  elements.completedTableBody.innerHTML = '';
+  const tableBody = document.querySelector('#completedTable tbody');
+  tableBody.innerHTML = '';
+
+  const today = new Date().toISOString().split('T')[0];
   let weekTotal = 0;
 
-  // Sort by date ascending
-  const sortedData = [...state.completedData].sort((a, b) => 
-    new Date(a.date) - new Date(b.date)
-  );
-
-  sortedData.forEach(day => {
+  // Add historical data
+  state.completedData.forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${formatTableDate(day.date)}</td>
       <td>${day.count.toLocaleString()}</td>
       <td>${day.percentage ? day.percentage.toFixed(2) + '%' : ''}</td>
     `;
-    elements.completedTableBody.appendChild(row);
+    tableBody.appendChild(row);
     weekTotal += day.count;
   });
+
+  // Add today's data if it exists
+  if (state.todayCompleted.count > 0) {
+    const todayRow = document.createElement('tr');
+    todayRow.innerHTML = `
+      <td>Today</td>
+      <td>${state.todayCompleted.count.toLocaleString()}</td>
+      <td>${state.todayCompleted.percentage.toFixed(2)}%</td>
+    `;
+    tableBody.insertBefore(todayRow, tableBody.firstChild);
+    weekTotal += state.todayCompleted.count;
+  }
 
   elements.weekTotal.textContent = weekTotal.toLocaleString();
 }
 
-function saveCompletedData() {
+function calculateExpectedDate() {
   try {
-    localStorage.setItem('completedData', JSON.stringify(state.completedData));
-  } catch (e) {
-    console.error('Failed to save data:', e);
-  }
-}
-
-function archiveTodaysData() {
-  if (state.todayCompleted.count > 0) {
-    // Get yesterday's date
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const selectedMonth = elements.monthSelect.value;
+    const weekTotal = parseInt(elements.weekTotal.textContent.replace(/,/g, '')) || 1;
     
-    // Remove the oldest day
-    state.completedData.shift();
+    const monthIndex = state.pendingData.findIndex(m => m.month === selectedMonth);
+    if (monthIndex === -1) throw new Error("Selected month not found");
     
-    // Add yesterday's data
-    state.completedData.push({
-      date: yesterdayStr,
-      count: state.todayCompleted.count,
-      percentage: state.todayCompleted.percentage
+    let sum = 0;
+    for (let i = 0; i <= monthIndex; i++) {
+      sum += state.pendingData[i].count;
+    }
+    
+    elements.selectedPending.textContent = sum.toLocaleString();
+    elements.completionRate.textContent = weekTotal.toLocaleString();
+    
+    const today = new Date();
+    const expectedDate = new Date(today);
+    expectedDate.setDate(today.getDate() + Math.ceil((sum / weekTotal) * 7));
+    
+    elements.expectedDate.textContent = expectedDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
     
-    // Reset today's count
-    state.todayCompleted.count = 0;
-    state.todayCompleted.percentage = 0;
-    
-    // Save and update UI
-    saveCompletedData();
-    updateUI();
+  } catch (error) {
+    console.error("Calculation error:", error);
+    elements.expectedDate.textContent = "Error in calculation";
+    elements.selectedPending.textContent = "0";
+    elements.completionRate.textContent = "0";
   }
 }
 
@@ -319,51 +350,44 @@ function scheduleDailyUpdate() {
     0
   );
 
-  // If already past today's update time, schedule for tomorrow
   if (now > updateTime) {
     updateTime.setDate(updateTime.getDate() + 1);
   }
 
   const timeUntilUpdate = updateTime - now;
-  elements.nextArchive.textContent = `Next archive: ${formatTime(updateTime)}`;
+  elements.nextArchive.textContent = updateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   setTimeout(() => {
     archiveTodaysData();
-    scheduleDailyUpdate(); // Reschedule for next day
+    scheduleDailyUpdate();
   }, timeUntilUpdate);
 }
 
-// Utility functions
-function formatTableDate(dateString) {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    weekday: 'short', 
-    month: 'short', 
-    day: 'numeric' 
-  });
-}
-
-function formatChartDate(date) {
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric' 
-  });
-}
-
-function formatDateTime(date) {
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
-
-function formatTime(date) {
-  return date.toLocaleTimeString('en-US', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
+function archiveTodaysData() {
+  if (state.todayCompleted.count > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Add today's data to history
+    state.completedData.push({
+      date: today,
+      count: state.todayCompleted.count,
+      percentage: state.todayCompleted.percentage
+    });
+    
+    // Remove oldest if needed
+    if (state.completedData.length > CONFIG.HISTORY_DAYS) {
+      state.completedData.shift();
+    }
+    
+    // Reset today's count
+    state.todayCompleted.count = 0;
+    state.todayCompleted.percentage = 0;
+    elements.todayCount.textContent = "0";
+    elements.todayPercent.textContent = "0.00";
+    
+    updateCompletedTable();
+    updateCharts();
+  }
 }
 
 function updatePendingTotal() {
@@ -372,8 +396,6 @@ function updatePendingTotal() {
 }
 
 function updateCharts() {
-  if (!charts.pending || !charts.completed) return;
-  
   charts.pending.data.datasets[0].data = state.pendingData.map(m => m.count);
   charts.pending.update();
   
@@ -382,31 +404,40 @@ function updateCharts() {
   charts.completed.update();
 }
 
+// Utility functions
+function formatTableDate(dateString) {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatChartDate(date) {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatDateTime(date) {
+  return date.toLocaleString();
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function getChartOptions(xLabel, yLabel) {
   return {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      y: { 
-        beginAtZero: true, 
-        title: { 
-          display: true, 
-          text: yLabel 
-        } 
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: yLabel
+        }
       },
-      x: { 
-        title: { 
-          display: true, 
-          text: xLabel 
-        } 
-      }
-    },
-    plugins: {
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            return `${context.dataset.label}: ${context.raw.toLocaleString()}`;
-          }
+      x: {
+        title: {
+          display: true,
+          text: xLabel
         }
       }
     }
@@ -416,11 +447,6 @@ function getChartOptions(xLabel, yLabel) {
 function setupEventListeners() {
   elements.refreshBtn.addEventListener('click', fetchData);
   elements.calculateBtn.addEventListener('click', calculateExpectedDate);
-  
-  // Add error handling for chart elements
-  if (!elements.pendingChart || !elements.completedChart) {
-    console.error('Chart elements not found!');
-  }
 }
 
 function startAutoRefresh() {
@@ -431,40 +457,4 @@ function startAutoRefresh() {
 function updateNextRefreshTime() {
   const nextRefresh = new Date(Date.now() + CONFIG.REFRESH_INTERVAL);
   elements.nextRefresh.textContent = `Next refresh: ${formatTime(nextRefresh)}`;
-}
-
-function calculateExpectedDate() {
-  try {
-    const selectedMonth = elements.monthSelect.value;
-    const monthIndex = state.pendingData.findIndex(m => m.month === selectedMonth);
-    
-    if (monthIndex === -1) {
-      throw new Error("Selected month not found");
-    }
-    
-    const sum = state.pendingData
-      .slice(0, monthIndex + 1)
-      .reduce((sum, month) => sum + month.count, 0);
-      
-    const weekTotal = parseInt(elements.weekTotal.textContent.replace(/,/g, '')) || 1;
-    const daysToAdd = Math.ceil((sum / weekTotal) * 7);
-    
-    const expectedDate = new Date();
-    expectedDate.setDate(expectedDate.getDate() + daysToAdd);
-    
-    elements.selectedPending.textContent = sum.toLocaleString();
-    elements.completionRate.textContent = weekTotal.toLocaleString();
-    elements.expectedDate.textContent = expectedDate.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-    
-  } catch (error) {
-    console.error("Calculation error:", error);
-    elements.expectedDate.textContent = "Error in calculation";
-    elements.selectedPending.textContent = "0";
-    elements.completionRate.textContent = "0";
-  }
 }
