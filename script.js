@@ -143,8 +143,6 @@ function getLast7DaysLabels() {
     dates.push(formatChartDate(date));
   }
   
-  // Add today's date
-  dates.push(formatChartDate(today));
   
   return dates;
 }
@@ -162,8 +160,6 @@ function getLast7DaysData() {
     data.push(dayData ? dayData.count : 0);
   }
   
-  // Add today's count
-  data.push(state.todayCompleted.count);
   
   return data;
 }
