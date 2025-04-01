@@ -87,7 +87,7 @@ function initializeCharts() {
     options: getChartOptions('Month', 'Applications')
   });
 
-  // Completed Cases Chart (shows historical data + today)
+  // Completed Cases Chart (shows historical data only, not today)
   charts.completed = new Chart(elements.completedChart, {
     type: 'line',
     data: {
@@ -134,37 +134,33 @@ function updateUI() {
 
 // Helper functions for chart data
 function getLast7DaysLabels() {
-  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
   const dates = [];
   
-  // Add historical dates (6 days ago to yesterday)
-  for (let i = 6; i >= 1; i--) {
-    const date = new Date(today);
+  // Get labels for last 7 days (not including today)
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(yesterday);
     date.setDate(date.getDate() - i);
     dates.push(formatChartDate(date));
   }
-  
-  // Add today's date
-  dates.push(formatChartDate(today));
   
   return dates;
 }
 
 function getLast7DaysData() {
-  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
   const data = [];
   
-  // Add historical data (6 days ago to yesterday)
-  for (let i = 6; i >= 1; i--) {
-    const date = new Date();
+  // Get data for last 7 days (not including today)
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(yesterday);
     date.setDate(date.getDate() - i);
     const dateStr = date.toISOString().split('T')[0];
     const dayData = state.completedData.find(d => d.date === dateStr);
     data.push(dayData ? dayData.count : 0);
   }
-  
-  // Add today's count
-  data.push(state.todayCompleted.count);
   
   return data;
 }
@@ -277,7 +273,7 @@ function updateCompletedTable() {
   const today = new Date().toISOString().split('T')[0];
   let weekTotal = 0;
 
-  // Add historical data
+  // Add historical data (last 7 days, not including today)
   state.completedData.forEach(day => {
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -289,16 +285,16 @@ function updateCompletedTable() {
     weekTotal += day.count;
   });
 
-  // Add today's data if it exists
+  // Add today's data in a separate row if it exists
   if (state.todayCompleted.count > 0) {
     const todayRow = document.createElement('tr');
+    todayRow.classList.add('today-row');
     todayRow.innerHTML = `
       <td>Today</td>
       <td>${state.todayCompleted.count.toLocaleString()}</td>
       <td>${state.todayCompleted.percentage.toFixed(2)}%</td>
     `;
     tableBody.insertBefore(todayRow, tableBody.firstChild);
-    weekTotal += state.todayCompleted.count;
   }
 
   elements.weekTotal.textContent = weekTotal.toLocaleString();
@@ -374,7 +370,7 @@ function archiveTodaysData() {
       percentage: state.todayCompleted.percentage
     });
     
-    // Remove oldest if needed
+    // Ensure we only keep the last 7 days of data
     if (state.completedData.length > CONFIG.HISTORY_DAYS) {
       state.completedData.shift();
     }
