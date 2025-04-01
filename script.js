@@ -48,6 +48,7 @@ let state = {
     { date: '2024-03-30', count: 97, percentage: null },
     { date: '2024-03-31', count: 522, percentage: null }
   ],
+  todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
 
 // Chart instances
@@ -143,6 +144,8 @@ function getLast7DaysLabels() {
     dates.push(formatChartDate(date));
   }
   
+  // Add today's date
+  dates.push(formatChartDate(today));
   
   return dates;
 }
@@ -160,6 +163,8 @@ function getLast7DaysData() {
     data.push(dayData ? dayData.count : 0);
   }
   
+  // Add today's count
+  data.push(state.todayCompleted.count);
   
   return data;
 }
