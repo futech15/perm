@@ -133,12 +133,11 @@ function updateUI() {
 }
 
 // Helper functions for chart data
-
-function getLast7DaysDates() {
-   const today = new Date();
+function getLast7DaysLabels() {
+  const today = new Date();
   const dates = [];
-
-// Add historical dates (6 days ago to yesterday)
+  
+  // Add historical dates (6 days ago to yesterday)
   for (let i = 6; i >= 1; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
