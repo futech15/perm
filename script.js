@@ -138,31 +138,31 @@ function getLast7DaysDates() {
   const dates = [];
   const today = new Date();
 
-  // Add historical dates (6 days ago to today)
-  for (let i = 6; i >= 0; i--) {
+// Add historical dates (6 days ago to yesterday)
+  for (let i = 6; i >= 1; i--) {
     const date = new Date(today);
-    date.setDate(today.getDate() - i);
+    date.setDate(date.getDate() - i);
     dates.push(formatChartDate(date));
   }
-
+  
+  // Add today's date
+  dates.push(formatChartDate(today));
+  
   return dates;
 }
 
-function getLast7DaysData(state) {
+function getLast7DaysData() {
+  const today = new Date().toISOString().split('T')[0];
   const data = [];
-  const today = new Date();
-
-  // Add historical data (6 days ago to today)
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
+  
+  // Add historical data (6 days ago to yesterday)
+  for (let i = 6; i >= 1; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
     const dateStr = date.toISOString().split('T')[0];
     const dayData = state.completedData.find(d => d.date === dateStr);
     data.push(dayData ? dayData.count : 0);
   }
-
-  return data;
-}
 
   
   // Add today's count
