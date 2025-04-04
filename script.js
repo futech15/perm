@@ -43,10 +43,10 @@ let state = {
     { date: '2024-04-3', count: 610, percentage: null },
     { date: '2024-04-2', count: 596, percentage: null },
     { date: '2024-04-1', count: 605, percentage: null },
-    { date: '2024-03-31', count: 522, percentage: null },
-    { date: '2024-03-30', count: 97, percentage: null },
-    { date: '2024-03-29', count: 107, percentage: null },
-    { date: '2024-03-28', count: 467, percentage: null }
+    { date: '2024-03-32', count: 522, percentage: null },
+    { date: '2024-03-31', count: 97, percentage: null },
+    { date: '2024-03-30', count: 107, percentage: null },
+    { date: '2024-03-29', count: 467, percentage: null }
   ],
   todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
