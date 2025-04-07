@@ -350,28 +350,23 @@ function calculateExpectedDate() {
 }
 
 function scheduleDailyUpdate() {
-  const now = new Date();
-  const updateTime = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    CONFIG.DAILY_UPDATE_HOUR,
-    CONFIG.DAILY_UPDATE_MINUTE,
-    0
-  );
-
-  if (now > updateTime) {
-    updateTime.setDate(updateTime.getDate() + 1);
+  // Delete existing triggers with the same handler function
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const trigger of triggers) {
+    if (trigger.getHandlerFunction() === 'archiveTodaysData') {
+      ScriptApp.deleteTrigger(trigger);
+    }
   }
 
-  const timeUntilUpdate = updateTime - now;
-  elements.nextArchive.textContent = updateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  setTimeout(() => {
-    archiveTodaysData();
-    scheduleDailyUpdate();
-  }, timeUntilUpdate);
+  // Create a new time-based trigger for the specified time
+  ScriptApp.newTrigger('archiveTodaysData')
+    .timeBased()
+    .atHour(CONFIG.DAILY_UPDATE_HOUR)
+    .nearMinute(CONFIG.DAILY_UPDATE_MINUTE)
+    .everyDays(1)
+    .create();
 }
+
 
 function archiveTodaysData() {
   if (state.todayCompleted.count > 0) {
