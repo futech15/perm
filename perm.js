@@ -1,82 +1,99 @@
 const puppeteer = require('puppeteer');
 const axios = require('axios');
+const { google } = require('googleapis'); // For Google Sheets API
 
-// Function to solve CAPTCHA using 2Captcha (or another CAPTCHA solving service)
-async function solveCaptcha(imageUrl) {
+// 2Captcha API Key (replace with yours)
+const CAPTCHA_API_KEY = 'YOUR_2CAPTCHA_API_KEY';
+
+// Google Sheets setup
+const SPREADSHEET_ID = 'YOUR_SHEET_ID';
+const SHEET_NAME = 'Sheet1';
+const auth = new google.auth.GoogleAuth({
+  keyFile: 'credentials.json', // Download from Google Cloud Console
+  scopes: 'https://www.googleapis.com/auth/spreadsheets',
+});
+
+async function solveCaptcha(base64Image) {
   try {
-    const response = await axios.post('http://2captcha.com/in.php', {
-      method: 'post',
-      body: { imageUrl },
-      key: 'YOUR_2CAPTCHA_API_KEY'
-    });
+    // Send CAPTCHA to 2Captcha
+    const response = await axios.post(
+      `http://2captcha.com/in.php`,
+      `key=${CAPTCHA_API_KEY}&method=base64&body=${encodeURIComponent(base64Image)}&json=1`
+    );
     
-    return response.data; // This will return the CAPTCHA solution
+    if (!response.data.request) throw new Error('CAPTCHA submission failed');
+    
+    // Wait for solution
+    const captchaId = response.data.request;
+    await new Promise(resolve => setTimeout(resolve, 20000)); // Wait 20 seconds
+    
+    // Retrieve solution
+    const solutionRes = await axios.get(
+      `http://2captcha.com/res.php?key=${CAPTCHA_API_KEY}&action=get&id=${captchaId}&json=1`
+    );
+    
+    return solutionRes.data.request;
   } catch (error) {
-    console.error('Error solving CAPTCHA:', error);
+    console.error('CAPTCHA solving error:', error);
     return null;
   }
 }
 
-// Function to extract data from the website and send it to Google Sheets
 async function fetchTotalCompletedToday() {
-  const url = 'https://permtimeline.com';
-  
-  // Launch Puppeteer browser
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
   
-  await page.goto(url);
-  
-  // Add CAPTCHA solving logic (if needed)
-  const captchaImage = await page.$('selector-for-captcha'); // You'll need to find the CAPTCHA image on the page
-  if (captchaImage) {
-    const captchaImageUrl = await captchaImage.screenshot({ encoding: 'base64' });
-    const captchaSolution = await solveCaptcha(captchaImageUrl);
-    
-    if (captchaSolution) {
-      // Complete CAPTCHA solving process here (e.g., fill out form and submit)
-      await page.type('captcha-input-selector', captchaSolution);
-      await page.click('submit-captcha-button-selector');
-      await page.waitForNavigation();
-    }
-  }
-  
-  // Extract the Total Completed Today data after solving CAPTCHA
-  const totalCompletedToday = await page.$eval('#todayCount', el => el.textContent);
-  
-  console.log('Total Completed Today:', totalCompletedToday);
-  
-  // Send data to Google Sheets (via API)
-  await updateGoogleSheet(new Date(), totalCompletedToday);
-  
-  await browser.close();
-}
-
-// Function to update Google Sheets with the fetched data
-async function updateGoogleSheet(date, completedValue) {
-  const sheetId = '1xscPwljvNZEdB8yESa32kDLQlmnU-MGezLB6NuhX6YA'; // Your Google Sheet ID
-  const sheetRange = 'Sheet1!A:B'; // Sheet name and range where you want to insert data
-  const googleSheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${sheetRange}:append`;
-
-  const data = {
-    values: [
-      [date, completedValue]
-    ]
-  };
-
-  const headers = {
-    Authorization: `Bearer YOUR_GOOGLE_API_ACCESS_TOKEN`,  // Google API Token
-  };
-
   try {
-    const response = await axios.post(googleSheetApiUrl, data, { headers });
-    console.log('Google Sheets Updated:', response.data);
+    await page.goto('https://permtimeline.com', { waitUntil: 'networkidle2' });
+    
+    // Check for CAPTCHA
+    const captchaElement = await page.$('img[src*="captcha"], .captcha-image');
+    if (captchaElement) {
+      const captchaImage = await captchaElement.screenshot({ encoding: 'base64' });
+      const solution = await solveCaptcha(captchaImage);
+      
+      if (solution) {
+        // Find CAPTCHA input and submit
+        await page.type('input[name="captcha"]', solution);
+        await page.click('button[type="submit"]');
+        await page.waitForNavigation();
+      }
+    }
+    
+    // Get the data
+    const totalCompletedToday = await page.$eval('#todayCount', el => el.textContent.trim());
+    console.log('Fetched data:', totalCompletedToday);
+    
+    // Update Google Sheets
+    await updateGoogleSheet(totalCompletedToday);
+    
   } catch (error) {
-    console.error('Error updating Google Sheets:', error);
+    console.error('Error during scraping:', error);
+  } finally {
+    await browser.close();
   }
 }
 
-// Call the fetch function (for testing)
-fetchTotalCompletedToday();
+async function updateGoogleSheet(data) {
+  try {
+    const sheets = google.sheets({ version: 'v4', auth });
+    const now = new Date().toISOString();
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A:B`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: {
+        values: [[now, data]],
+      },
+    });
+    
+    console.log('Successfully updated Google Sheets');
+  } catch (error) {
+    console.error('Google Sheets API error:', error.message);
+  }
+}
 
-// To run this on a schedule (e.g., every day), you can set up a cron job or use cloud functions.
+// Run the function
+fetchTotalCompletedToday();
