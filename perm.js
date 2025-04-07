@@ -54,7 +54,7 @@ async function fetchTotalCompletedToday() {
 
 // Function to update Google Sheets with the fetched data
 async function updateGoogleSheet(date, completedValue) {
-  const sheetId = '1xscPwljvNZEdB8yESa32kDLQlmnU-MGezLB6NuhX6YA';
+  const sheetId = '1xscPwljvNZEdB8yESa32kDLQlmnU-MGezLB6NuhX6YA'; // Your Google Sheet ID
   const sheetRange = 'Sheet1!A:B'; // Sheet name and range where you want to insert data
   const googleSheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${sheetRange}:append`;
 
@@ -65,7 +65,7 @@ async function updateGoogleSheet(date, completedValue) {
   };
 
   const headers = {
-    Authorization: `Bearer YOUR_GOOGLE_API_ACCESS_TOKEN`,
+    Authorization: `Bearer YOUR_GOOGLE_API_ACCESS_TOKEN`,  // Google API Token
   };
 
   try {
@@ -80,4 +80,3 @@ async function updateGoogleSheet(date, completedValue) {
 fetchTotalCompletedToday();
 
 // To run this on a schedule (e.g., every day), you can set up a cron job or use cloud functions.
-
