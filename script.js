@@ -59,11 +59,6 @@ let charts = {
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
-  const savedData = localStorage.getItem('completedData');
-  if (savedData) {
-    state.completedData = JSON.parse(savedData);
-  }
-
   initializeCharts();
   setupEventListeners();
   await fetchData();
@@ -71,7 +66,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   scheduleDailyUpdate();
   updateUI();
 });
-
 
 function initializeCharts() {
   if (charts.pending) charts.pending.destroy();
@@ -250,35 +244,32 @@ function updateNovemberData(doc) {
 
 function updateTodaysCompletedCases(doc) {
   const today = new Date().toISOString().split('T')[0];
-
   const paragraphs = Array.from(doc.querySelectorAll('p'));
+  
   for (const p of paragraphs) {
-    const text = p.textContent.replace(/<!--.*?-->/g, '').trim();
-    
-    if (/Total Completed Today/i.test(text)) {
-      const match = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/i);
-      if (match) {
-        const [, count, percentage] = match;
-        state.todayCompleted.count = parseInt(count, 10);
-        state.todayCompleted.percentage = parseFloat(percentage);
-
-        elements.todayCount.textContent = count;
-        elements.todayPercent.textContent = parseFloat(percentage).toFixed(2);
+    if (p.textContent.includes('Total Completed Today')) {
+      const text = p.textContent.replace(/<!--.*?-->/g, '');
+      const matches = text.match(/Total Completed Today:\s*(\d+)\s*\(([\d.]+)%\)/);
+      
+      if (matches && matches.length >= 3) {
+        state.todayCompleted.count = parseInt(matches[1]);
+        state.todayCompleted.percentage = parseFloat(matches[2]);
+        
+        elements.todayCount.textContent = state.todayCompleted.count;
+        elements.todayPercent.textContent = state.todayCompleted.percentage.toFixed(2);
         elements.todayUpdated.textContent = formatDateTime(new Date());
-
         updateCharts();
         return;
       }
     }
   }
-
-  console.warn("Today's completed cases not found or format not matched.");
+  
+  console.warn("Today's completed cases not found");
   state.todayCompleted.count = 0;
   state.todayCompleted.percentage = 0;
   elements.todayCount.textContent = "0";
   elements.todayPercent.textContent = "0.00";
 }
-
 
 function updateCompletedTable() {
   const tableBody = document.querySelector('#completedTable tbody');
@@ -350,23 +341,28 @@ function calculateExpectedDate() {
 }
 
 function scheduleDailyUpdate() {
-  // Delete existing triggers with the same handler function
-  const triggers = ScriptApp.getProjectTriggers();
-  for (const trigger of triggers) {
-    if (trigger.getHandlerFunction() === 'archiveTodaysData') {
-      ScriptApp.deleteTrigger(trigger);
-    }
+  const now = new Date();
+  const updateTime = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    CONFIG.DAILY_UPDATE_HOUR,
+    CONFIG.DAILY_UPDATE_MINUTE,
+    0
+  );
+
+  if (now > updateTime) {
+    updateTime.setDate(updateTime.getDate() + 1);
   }
 
-  // Create a new time-based trigger for the specified time
-  ScriptApp.newTrigger('archiveTodaysData')
-    .timeBased()
-    .atHour(CONFIG.DAILY_UPDATE_HOUR)
-    .nearMinute(CONFIG.DAILY_UPDATE_MINUTE)
-    .everyDays(1)
-    .create();
-}
+  const timeUntilUpdate = updateTime - now;
+  elements.nextArchive.textContent = updateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  setTimeout(() => {
+    archiveTodaysData();
+    scheduleDailyUpdate();
+  }, timeUntilUpdate);
+}
 
 function archiveTodaysData() {
   if (state.todayCompleted.count > 0) {
