@@ -31,23 +31,23 @@ const elements = {
 // Application State with your historical data and today's dynamic data
 let state = {
   pendingData: [
-    { month: 'November 2023', count: 6722, percentage: 43.98 },
-    { month: 'December 2023', count: 13857, percentage: null },
+    { month: 'November 2023', count: 735, percentage: 43.98 },
+    { month: 'December 2023', count: 9031, percentage: null },
     { month: 'January 2024', count: 11186, percentage: null },
-    { month: 'February 2024', count: 11247, percentage: null },
-    { month: 'March 2024', count: 10145, percentage: null },
-    { month: 'April 2024', count: 10622, percentage: null },
-    { month: 'May 2024', count: 12703, percentage: null }
+    { month: 'February 2024', count: 11201, percentage: null },
+    { month: 'March 2024', count: 10132, percentage: null },
+    { month: 'April 2024', count: 10604, percentage: null },
+    { month: 'May 2024', count: 12683, percentage: null }
   ],
   completedData: [
     
-    { date: '2024-04-8', count: 707, percentage: null },
-    { date: '2024-04-7', count: 691, percentage: null },
-    { date: '2024-04-6', count: 287, percentage: null },
-    { date: '2024-04-5', count: 36, percentage: null },
-    { date: '2024-04-4', count: 557, percentage: null },
-    { date: '2024-04-3', count: 610, percentage: null },
-    { date: '2024-04-2', count: 596, percentage: null }
+    { date: '2024-04-21', count: 606, percentage: null },
+    { date: '2024-04-20', count: 87, percentage: null },
+    { date: '2024-04-19', count: 43, percentage: null },
+    { date: '2024-04-18', count: 370, percentage: null },
+    { date: '2024-04-17', count: 635, percentage: null },
+    { date: '2024-04-16', count: 571, percentage: null },
+    { date: '2024-04-15', count: 533, percentage: null }
   ],
   todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
