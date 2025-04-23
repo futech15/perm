@@ -31,16 +31,18 @@ const elements = {
 // Application State with your historical data and today's dynamic data
 let state = {
   pendingData: [
-    { month: 'November 2023', count: 735, percentage: 43.98 },
-    { month: 'December 2023', count: 9031, percentage: null },
-    { month: 'January 2024', count: 11186, percentage: null },
+    { month: 'November 2023', count: 672, percentage: 43.98 },
+    { month: 'December 2023', count: 8714, percentage: null },
+    { month: 'January 2024', count: 11165, percentage: null },
     { month: 'February 2024', count: 11201, percentage: null },
     { month: 'March 2024', count: 10132, percentage: null },
     { month: 'April 2024', count: 10604, percentage: null },
     { month: 'May 2024', count: 12683, percentage: null }
   ],
   completedData: [
-    
+
+ 
+    { date: '2024-04-22', count: 614, percentage: null },
     { date: '2024-04-21', count: 606, percentage: null },
     { date: '2024-04-20', count: 87, percentage: null },
     { date: '2024-04-19', count: 43, percentage: null },
