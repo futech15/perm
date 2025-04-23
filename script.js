@@ -48,8 +48,7 @@ let state = {
     { date: '2024-04-19', count: 43, percentage: null },
     { date: '2024-04-18', count: 370, percentage: null },
     { date: '2024-04-17', count: 635, percentage: null },
-    { date: '2024-04-16', count: 571, percentage: null },
-    { date: '2024-04-15', count: 533, percentage: null }
+    { date: '2024-04-16', count: 571, percentage: null }
   ],
   todayCompleted: { count: 0, percentage: 0 } // Today's dynamic data
 };
